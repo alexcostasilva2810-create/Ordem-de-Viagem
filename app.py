@@ -36,7 +36,7 @@ with st.form("form_viagem"):
     
     with col1:
         n_viagem = st.text_input("Nº da viagem")
-        empurrador = st.selectbox("Empurrador", ["Empurrador A", "Empurrador B"])
+        empurrador = st.selectbox("Empurrador", ["JATOBA","AROEIRA"])
         balsas = st.text_input("Balsas (IDs/Quantidade)")
         rota = st.text_input("Rota (Ex: Miritituba -> Santarém)")
         volume = st.number_input("Volume transportado (m³)", min_value=0.0)
