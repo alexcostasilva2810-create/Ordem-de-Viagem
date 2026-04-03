@@ -1,93 +1,143 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from fpdf import FPDF
+from google.oauth2.service_account import Credentials
 import datetime
 
-# --- CONFIGURAÇÃO GOOGLE SHEETS ---
-def conectar_planilha():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name('seu_arquivo_credenciais.json', scope)
-    client = gspread.authorize(creds)
-    # Abre a planilha pelo nome ou ID
-    return client.open("NOME_DA_SUA_PLANILHA").sheet1
+# --- CONFIGURAÇÃO DE PÁGINA E ESTILO ---
+st.set_page_config(page_title="Gestão de Frota e Simulação PCO", layout="wide")
 
-# --- FUNÇÃO PARA GERAR PDF ---
-def gerar_pdf(dados):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="Simulação de Viagem - PCO", ln=True, align='C')
-    
-    pdf.set_font("Arial", size=12)
-    for chave, valor in dados.items():
-        pdf.cell(200, 10, txt=f"{chave}: {valor}", ln=True)
-    
-    nome_arquivo = f"Simulacao_Viagem_{dados['Nº da viagem']}.pdf"
-    pdf.output(nome_arquivo)
-    return nome_arquivo
-
-# --- INTERFACE STREAMLIT ---
-st.title("🚢 Sistema de Programação de Viagens")
-
-with st.form("form_viagem"):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        n_viagem = st.text_input("Nº da viagem")
-        empurrador = st.selectbox("Empurrador", ["JATOBA","AROEIRA"])
-        balsas = st.text_input("Balsas (IDs/Quantidade)")
-        rota = st.text_input("Rota (Ex: Miritituba -> Santarém)")
-        volume = st.number_input("Volume transportado (m³)", min_value=0.0)
-        faturamento = st.number_input("Faturamento (R$)", min_value=0.0)
-
-    with col2:
-        tempo_previsto = st.text_input("Tempo previsto de navegação")
-        combustivel = st.number_input("Combustível da viagem (litros)", min_value=0)
-        comandante = st.text_input("Comandante")
-        chefe_maquina = st.text_input("Chefe de Máquinas")
-        horimetros = st.text_input("Horímetros (Iniciais)")
-
-    submit = st.form_submit_button("Simular e Salvar Viagem")
-
-if submit:
-    dados_viagem = {
-        "Data": str(datetime.date.today()),
-        "Nº da viagem": n_viagem,
-        "Empurrador": empurrador,
-        "Balsas": balsas,
-        "Rota": rota,
-        "Volume": volume,
-        "Faturamento": faturamento,
-        "Tempo Previsto": tempo_previsto,
-        "Combustível": combustivel,
-        "Comandante": comandante,
-        "Chefe Máquina": chefe_maquina,
-        "Horímetros": horimetros
-    }
-
-    # --- LÓGICA DE VIABILIDADE (EXEMPLO) ---
-    meta_faturamento = 50000  # Valor vindo do seu orçamento
-    if faturamento < meta_faturamento:
-        st.error(f"⚠️ Alerta: Faturamento abaixo do orçamento planejado!")
-        viavel = "Não"
-    else:
-        st.success("✅ Viagem em conformidade com o orçamento.")
-        viavel = "Sim"
-
-    # 1. Salvar no Google Sheets
+# --- FUNÇÃO DE CONEXÃO (UTILIZANDO SECRETS DO STREAMLIT) ---
+def conectar_google():
     try:
-        sheet = conectar_planilha()
-        sheet.append_row(list(dados_viagem.values()))
-        st.info("Dados salvos na Planilha Google com sucesso!")
-    except Exception as e:
-        st.error(f"Erro ao conectar na planilha: {e}")
+        info_dict = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(info_dict, scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ])
+        client = gspread.authorize(creds)
+        # Substitua pelo nome EXATO da sua planilha
+        return client.open("NOME_DA_SUA_PLANILHA")
+    except:
+        st.error("Erro de Conexão: Verifique as Secrets e o nome da Planilha.")
+        return None
 
-    # 2. Gerar PDF
-    pdf_path = gerar_pdf(dados_viagem)
-    with open(pdf_path, "rb") as f:
-        st.download_button("Baixar PDF da Simulação", f, file_name=pdf_path)
+# --- INTERFACE PRINCIPAL ---
+st.title("🚢 Sistema Operacional de Navegação - PCO")
 
-    # 3. Envio de E-mail (Sugestão: Usar biblioteca 'smtplib' ou integração externa)
-    st.write("✉️ E-mail enviado aos gestores para aprovação.")
+# Criação das abas (Sessões)
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🏠 Simulador de Viagem", 
+    "⚙️ Ativos (Empurradores)", 
+    "🛶 Balsas", 
+    "👨‍✈️ Equipe", 
+    "📍 Rotas"
+])
+
+# Conectar à planilha uma vez para carregar os dados
+doc = conectar_google()
+
+# ---------------------------------------------------------
+# SESSÃO 2: CADASTRO DE ATIVOS (EMPURRADORES)
+# ---------------------------------------------------------
+with tab2:
+    st.subheader("Cadastro de Empurradores")
+    with st.form("form_ativos"):
+        nome_ativo = st.text_input("Nome do Empurrador (Ex: AROEIRA, JATOBA)")
+        submit_ativo = st.form_submit_button("Cadastrar Ativo")
+        if submit_ativo and doc:
+            doc.worksheet("Ativos").append_row([nome_ativo])
+            st.success(f"{nome_ativo} cadastrado!")
+
+# ---------------------------------------------------------
+# SESSÃO 3: CADASTRO DE BALSAS
+# ---------------------------------------------------------
+with tab3:
+    st.subheader("Cadastro de Balsas")
+    with st.form("form_balsas"):
+        nome_balsa = st.text_input("Nome/ID da Balsa")
+        cap_balsa = st.number_input("Capacidade (m³)", min_value=0.0)
+        tipo_balsa = st.selectbox("Tipo de Carga", ["Grão", "Derivado"])
+        submit_balsa = st.form_submit_button("Cadastrar Balsa")
+        if submit_balsa and doc:
+            doc.worksheet("Balsas").append_row([nome_balsa, cap_balsa, tipo_balsa])
+            st.success(f"Balsa {nome_balsa} cadastrada!")
+
+# ---------------------------------------------------------
+# SESSÃO 4: EQUIPE (CMT / CH MAQ)
+# ---------------------------------------------------------
+with tab4:
+    st.subheader("Cadastro de Tripulação")
+    with st.form("form_equipe"):
+        nome_func = st.text_input("Nome Completo")
+        funcao = st.selectbox("Função", ["Comandante", "Chefe de Máquina"])
+        submit_equipe = st.form_submit_button("Cadastrar Tripulante")
+        if submit_equipe and doc:
+            doc.worksheet("Tripulacao").append_row([nome_func, funcao])
+            st.success("Tripulante cadastrado!")
+
+# ---------------------------------------------------------
+# SESSÃO 5: ROTAS
+# ---------------------------------------------------------
+with tab5:
+    st.subheader("Cadastro de Rotas e Tempos")
+    with st.form("form_rotas"):
+        origem_destino = st.text_input("Rota (Ex: STM x MIR)")
+        tempo_ref = st.number_input("Tempo Previsto (Horas)", min_value=0)
+        submit_rota = st.form_submit_button("Cadastrar Rota")
+        if submit_rota and doc:
+            doc.worksheet("Rotas").append_row([origem_destino, tempo_ref])
+            st.success("Rota salva!")
+
+# ---------------------------------------------------------
+# SESSÃO 1: SIMULADOR (PUXANDO DADOS DAS OUTRAS ABAS)
+# ---------------------------------------------------------
+with tab1:
+    st.subheader("Nova Simulação de Viagem")
+    
+    if doc:
+        # Puxando dados para os selects
+        lista_ativos = doc.worksheet("Ativos").col_values(1)[1:]
+        lista_balsas = doc.worksheet("Balsas").col_values(1)[1:]
+        lista_cmts = [r[0] for r in doc.worksheet("Tripulacao").get_all_values() if r[1] == "Comandante"]
+        lista_chefes = [r[0] for r in doc.worksheet("Tripulacao").get_all_values() if r[1] == "Chefe de Máquina"]
+        lista_rotas = doc.worksheet("Rotas").get_all_values()[1:]
+        dict_rotas = {r[0]: r[1] for r in lista_rotas}
+
+        with st.form("form_simulador"):
+            col1, col2 = st.columns(2)
+            with col1:
+                n_viagem = st.text_input("Nº da Viagem")
+                emp_sel = st.selectbox("Empurrador", lista_ativos)
+                balsa_sel = st.multiselect("Balsas no Comboio", lista_balsas)
+                rota_sel = st.selectbox("Rota", list(dict_rotas.keys()))
+                volume = st.number_input("Volume Total Planejado (m³)")
+            
+            with col2:
+                faturamento = st.number_input("Faturamento Estimado (R$)")
+                # Preenche automaticamente o tempo da rota selecionada
+                tempo_estimado = dict_rotas.get(rota_sel, 0)
+                st.info(f"Tempo estimado para esta rota: {tempo_estimado} horas")
+                
+                combustivel = st.number_input("Combustível Estimado (Litros)")
+                cmt_sel = st.selectbox("Comandante", lista_cmts)
+                chefe_sel = st.selectbox("Chefe de Máquinas", lista_chefes)
+                horimetro = st.text_input("Horímetros Iniciais")
+
+            if st.form_submit_button("Gerar Simulação e Salvar"):
+                # Lógica de Viabilidade (Exemplo de cruzamento)
+                if faturamento > (combustivel * 6.0): # Exemplo: Faturamento vs Gasto Diesel
+                    st.success("✅ Viagem Viável!")
+                    status = "VIÁVEL"
+                else:
+                    st.warning("⚠️ Fora dos Parâmetros!")
+                    status = "NÃO VIÁVEL"
+                
+                # Salvar na aba Simulacoes
+                doc.worksheet("Simulacoes").append_row([
+                    n_viagem, emp_sel, str(balsa_sel), rota_sel, volume, 
+                    faturamento, tempo_estimado, combustivel, cmt_sel, 
+                    chefe_sel, horimetro, status, str(datetime.date.today())
+                ])
+    else:
+        st.warning("Conecte a Planilha Google para habilitar o simulador.")
