@@ -17,7 +17,7 @@ def conectar_google():
         ])
         client = gspread.authorize(creds)
         # Substitua pelo nome EXATO da sua planilha
-        return client.open("NOME_DA_SUA_PLANILHA")
+        return client.open("BD O.S VG")
     except:
         st.error("Erro de Conexão: Verifique as Secrets e o nome da Planilha.")
         return None
