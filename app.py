@@ -19,7 +19,7 @@ def conectar_google():
         # Substitua pelo nome EXATO da sua planilha
         return client.open("BD O.S VG")
     except:
-        st.error("Erro de Conexão: Verifique as Secrets e o nome da Planilha.")
+        return client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
         return None
 
 # --- INTERFACE PRINCIPAL ---
