@@ -3,11 +3,25 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 
+# 1. Configuração da Página (Sempre no topo)
+st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
+
+@st.cache_resource
 def conectar_google():
+    """
+    Conecta ao Google Sheets tratando a chave privada 
+    para evitar erros de 'InvalidPadding' ou 'InvalidByte'.
+    """
     try:
+        # Puxa o dicionário das Secrets
+        if "gcp_service_account" not in st.secrets:
+            st.error("Erro: Configure as 'Secrets' no painel do Streamlit Cloud.")
+            return None
+            
         s = st.secrets["gcp_service_account"]
         
-        # Isso aqui limpa espaços invisíveis e garante que o \n seja real
+        # --- TRATAMENTO DA CHAVE ---
+        # Remove espaços extras e garante que as quebras de linha sejam reais
         pk = s["private_key"].strip()
         if "\\n" in pk:
             pk = pk.replace("\\n", "\n")
@@ -25,25 +39,45 @@ def conectar_google():
             "client_x509_cert_url": s["client_x509_cert_url"]
         }
         
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         return gspread.authorize(creds)
+        
     except Exception as e:
         st.error(f"Erro na Autenticação: {e}")
         return None
 
-# Interface
-st.title("🚢 Sistema ZION - PCO")
+# --- INTERFACE ---
+st.title("🚢 ZION - Gestão PCO Online")
+
 client = conectar_google()
 
 if client:
     try:
-        # Tenta abrir a planilha
-        doc = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
-        st.success("✅ CONECTADO COM A NOVA CHAVE!")
+        # ID da sua planilha (Extraído dos seus prints)
+        ID_PLANILHA = "1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw"
+        doc = client.open_by_key(ID_PLANILHA)
         
-        # Mostra a primeira aba
-        df = pd.DataFrame(doc.get_worksheet(0).get_all_records())
-        st.dataframe(df)
+        st.success("✅ Conectado com sucesso!")
+        
+        # Navegação por abas da planilha
+        abas = [w.title for w in doc.worksheets()]
+        aba_selecionada = st.sidebar.selectbox("Selecione a Tabela", abas)
+        
+        # Carregar e exibir os dados
+        sheet = doc.worksheet(aba_selecionada)
+        df = pd.DataFrame(sheet.get_all_records())
+        
+        if not df.empty:
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("A aba selecionada está vazia.")
+            
     except Exception as e:
-        st.error(f"Erro ao acessar planilha: {e}")
+        st.error(f"Erro ao carregar dados: {e}")
+else:
+    st.info("Aguardando configuração correta dos segredos.")
