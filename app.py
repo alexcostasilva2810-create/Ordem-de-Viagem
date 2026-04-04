@@ -3,59 +3,46 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 
-# 1. CONFIGURAÇÃO DA PÁGINA (Sempre a primeira coisa)
-st.set_page_config(page_title="ZION - PCO", layout="wide")
+# 1. ESSENCIAL: Configuração da página primeiro
+st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
 
-# 2. FUNÇÃO DE CONEXÃO REFORMULADA
 @st.cache_resource
 def conectar_google():
     try:
-        # Pega as credenciais das Secrets
-        s = st.secrets["gcp_service_account"]
+        # Puxa o dicionário completo do segredo
+        info = st.secrets["gcp_service_account"]
         
-        # O TRUQUE: Refazemos o dicionário garantindo que a chave privada
-        # não tenha espaços ou quebras de linha erradas
-        creds_dict = {
-            "type": s["type"],
-            "project_id": s["project_id"],
-            "private_key_id": s["private_key_id"],
-            "private_key": s["private_key"].replace("\\n", "\n"), # CORRIGE O PEM
-            "client_email": s["client_email"],
-            "client_id": s["client_id"],
-            "auth_uri": s["auth_uri"],
-            "token_uri": s["token_uri"],
-            "auth_provider_x509_cert_url": s["auth_provider_x509_cert_url"],
-            "client_x509_cert_url": s["client_x509_cert_url"]
-        }
-        
-        creds = Credentials.from_service_account_info(creds_dict, scopes=[
+        # Cria as credenciais (O Streamlit já entende o \n dentro de aspas simples)
+        creds = Credentials.from_service_account_info(info, scopes=[
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ])
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"Erro Crítico de Conexão: {e}")
+        st.error(f"Erro Crítico: {e}")
         return None
 
-# 3. EXECUÇÃO
+# EXECUÇÃO PRINCIPAL
+st.title("🚢 Sistema Operacional - ZION")
+
 client = conectar_google()
 
 if client:
     try:
-        # ID da sua planilha (BD O.S VG)
-        spreadsheet_id = "1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw"
-        doc = client.open_by_key(spreadsheet_id)
+        # ID da sua planilha
+        ID_PLANILHA = "1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw"
+        doc = client.open_by_key(ID_PLANILHA)
         
-        st.title("🚢 ZION - Sistema de Gestão PCO")
-        st.success("Conectado com Sucesso!")
+        st.success("✅ Conexão estabelecida com sucesso!")
         
-        # Menu simples para testar
-        aba = st.sidebar.selectbox("Aba", ["Ativos", "Balsas", "Rotas"])
-        sheet = doc.worksheet(aba)
+        # Menu para navegar entre as abas
+        aba_selecionada = st.selectbox("Selecione a Aba", ["Ativos", "Balsas", "Equipe", "Rotas"])
+        
+        sheet = doc.worksheet(aba_selecionada)
         dados = pd.DataFrame(sheet.get_all_records())
         st.dataframe(dados)
-
+        
     except Exception as e:
-        st.error(f"Erro ao ler as abas: {e}. Verifique se os nomes (Ativos, Balsas, Rotas) estão certos.")
+        st.error(f"Conectado ao Google, mas erro na Planilha: {e}")
 else:
-    st.warning("Verifique as configurações de Secrets no painel do Streamlit.")
+    st.info("Configure os Secrets no menu do Streamlit para ativar o sistema.")
