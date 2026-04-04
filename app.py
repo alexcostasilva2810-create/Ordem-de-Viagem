@@ -3,46 +3,47 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 
-# 1. ESSENCIAL: Configuração da página primeiro
-st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
+st.set_page_config(page_title="ZION - PCO", layout="wide")
 
 @st.cache_resource
 def conectar_google():
     try:
-        # Puxa o dicionário completo do segredo
-        info = st.secrets["gcp_service_account"]
+        s = st.secrets["gcp_service_account"]
         
-        # Cria as credenciais (O Streamlit já entende o \n dentro de aspas simples)
-        creds = Credentials.from_service_account_info(info, scopes=[
+        # Limpeza pesada para evitar o erro de PEM/Padding
+        pk = s["private_key"]
+        if "\\n" in pk:
+            pk = pk.replace("\\n", "\n")
+            
+        creds_dict = {
+            "type": s["type"],
+            "project_id": s["project_id"],
+            "private_key_id": s["private_key_id"],
+            "private_key": pk,
+            "client_email": s["client_email"],
+            "client_id": s["client_id"],
+            "auth_uri": s["auth_uri"],
+            "token_uri": s["token_uri"],
+            "auth_provider_x509_cert_url": s["auth_provider_x509_cert_url"],
+            "client_x509_cert_url": s["client_x509_cert_url"]
+        }
+        
+        creds = Credentials.from_service_account_info(creds_dict, scopes=[
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ])
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"Erro Crítico: {e}")
+        st.error(f"Erro: {e}")
         return None
 
-# EXECUÇÃO PRINCIPAL
-st.title("🚢 Sistema Operacional - ZION")
-
+st.title("🚢 Sistema ZION")
 client = conectar_google()
 
 if client:
     try:
-        # ID da sua planilha
-        ID_PLANILHA = "1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw"
-        doc = client.open_by_key(ID_PLANILHA)
-        
-        st.success("✅ Conexão estabelecida com sucesso!")
-        
-        # Menu para navegar entre as abas
-        aba_selecionada = st.selectbox("Selecione a Aba", ["Ativos", "Balsas", "Equipe", "Rotas"])
-        
-        sheet = doc.worksheet(aba_selecionada)
-        dados = pd.DataFrame(sheet.get_all_records())
-        st.dataframe(dados)
-        
+        doc = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
+        st.success("✅ FUNCIONOU! Sistema online.")
+        # Resto do seu código aqui...
     except Exception as e:
-        st.error(f"Conectado ao Google, mas erro na Planilha: {e}")
-else:
-    st.info("Configure os Secrets no menu do Streamlit para ativar o sistema.")
+        st.error(f"Erro ao abrir planilha: {e}")
