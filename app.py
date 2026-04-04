@@ -2,15 +2,18 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
+import json
 
-# 1. CONFIGURAÇÃO DA PÁGINA (Correto)
+# 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="ZION - Sistema de Gestão PCO", layout="wide")
 
 # 2. FUNÇÃO DE CONEXÃO AO GOOGLE
 def conectar_google():
     try:
-        # Pega as credenciais salvas nos Secrets
-        creds_dict = st.secrets["gcp_service_account"]
+        # Pega o texto do JSON que salvamos no Secrets e transforma em dicionário
+        creds_json = st.secrets["gcp_service_account"]["gcp_json"]
+        creds_dict = json.loads(creds_json)
+        
         creds = Credentials.from_service_account_info(creds_dict, scopes=[
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
@@ -26,42 +29,21 @@ client = conectar_google()
 
 if client:
     try:
-        # Abertura da Planilha pelo ID (Infalível)
+        # ID da sua planilha (BD O.S VG)
         spreadsheet_id = "1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw"
         doc = client.open_by_key(spreadsheet_id)
         
         # Carregando as abas
         sheet_ativos = doc.worksheet("Ativos")
-        sheet_balsas = doc.worksheet("Balsas")
-        sheet_rotas = doc.worksheet("Rotas")
-        sheet_simulacoes = doc.worksheet("Simulacoes")
         
-        # 4. INTERFACE DO SISTEMA
-        st.title("🚢 ZION - Simulador de Operação PCO")
+        st.title("🚢 ZION - Sistema Online")
+        st.success("Conectado com sucesso à planilha!")
         
-        menu = st.sidebar.selectbox("Navegação", ["Simulador", "Cadastrar Ativos", "Cadastrar Rotas"])
-
-        if menu == "Simulador":
-            st.subheader("Configurar Nova Simulação")
-            ativos = sheet_ativos.get_all_records()
-            df_ativos = pd.DataFrame(ativos)
-            
-            if not df_ativos.empty:
-                empurrador = st.selectbox("Selecione o Empurrador", df_ativos['Nome'].tolist())
-                st.write(f"Empurrador selecionado: {empurrador}")
-            else:
-                st.warning("Nenhum ativo encontrado.")
-
-        elif menu == "Cadastrar Ativos":
-            st.subheader("Cadastro de Ativos")
-            nome = st.text_input("Nome do Empurrador")
-            potencia = st.number_input("Potência (HP)")
-            if st.button("Salvar no Sheets"):
-                sheet_ativos.append_row([nome, potencia])
-                st.success("Salvo com sucesso!")
+        # Mostrar dados para testar
+        dados = pd.DataFrame(sheet_ativos.get_all_records())
+        st.dataframe(dados)
 
     except Exception as e:
-        st.error(f"Erro ao acessar as abas da planilha: {e}")
-        st.write("Verifique se os nomes das abas na planilha estão exatamente: Ativos, Balsas, Rotas, Simulacoes")
+        st.error(f"Erro ao abrir a planilha: {e}")
 else:
-    st.error("Não foi possível conectar. Verifique seus Secrets.")
+    st.error("Verifique os Secrets no painel do Streamlit.")
