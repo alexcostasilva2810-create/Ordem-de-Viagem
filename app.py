@@ -3,25 +3,22 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 
-# 1. Configuração da Página (Sempre no topo)
-st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
+# 1. Configuração da Página (Sempre a primeira linha de código)
+st.set_page_config(page_title="ZION - Sistema PCO", layout="wide")
 
 @st.cache_resource
 def conectar_google():
-    """
-    Conecta ao Google Sheets tratando a chave privada 
-    para evitar erros de 'InvalidPadding' ou 'InvalidByte'.
-    """
     try:
-        # Puxa o dicionário das Secrets
+        # Puxa as informações que você colou no campo 'Secrets' do Streamlit Cloud
         if "gcp_service_account" not in st.secrets:
-            st.error("Erro: Configure as 'Secrets' no painel do Streamlit Cloud.")
+            st.error("Erro: Você ainda não configurou as 'Secrets' no painel do Streamlit.")
             return None
             
         s = st.secrets["gcp_service_account"]
         
-        # --- TRATAMENTO DA CHAVE ---
-        # Remove espaços extras e garante que as quebras de linha sejam reais
+        # --- TRATAMENTO DE LIMPEZA DA CHAVE ---
+        # Isso remove espaços e transforma o texto '\n' em quebras de linha reais.
+        # É aqui que matamos o erro de 'Invalid Padding' ou 'Invalid Byte'.
         pk = s["private_key"].strip()
         if "\\n" in pk:
             pk = pk.replace("\\n", "\n")
@@ -39,6 +36,7 @@ def conectar_google():
             "client_x509_cert_url": s["client_x509_cert_url"]
         }
         
+        # Define o que o app pode fazer (Ler planilhas e arquivos do Drive)
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
@@ -48,36 +46,43 @@ def conectar_google():
         return gspread.authorize(creds)
         
     except Exception as e:
-        st.error(f"Erro na Autenticação: {e}")
+        st.error(f"Erro na Autenticação (Verifique sua chave): {e}")
         return None
 
-# --- INTERFACE ---
+# --- INTERFACE DO DASHBOARD ---
 st.title("🚢 ZION - Gestão PCO Online")
+st.markdown("---")
 
 client = conectar_google()
 
 if client:
     try:
-        # ID da sua planilha (Extraído dos seus prints)
+        # ID da sua planilha (Extraído da sua URL do Google Sheets)
         ID_PLANILHA = "1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw"
         doc = client.open_by_key(ID_PLANILHA)
         
-        st.success("✅ Conectado com sucesso!")
+        st.success("✅ Conexão estabelecida com sucesso!")
         
-        # Navegação por abas da planilha
+        # Sidebar para escolher a aba (Trabalho, Materiais, etc)
         abas = [w.title for w in doc.worksheets()]
         aba_selecionada = st.sidebar.selectbox("Selecione a Tabela", abas)
         
-        # Carregar e exibir os dados
+        # Carregando os dados da aba escolhida
         sheet = doc.worksheet(aba_selecionada)
-        df = pd.DataFrame(sheet.get_all_records())
+        dados = sheet.get_all_records()
         
-        if not df.empty:
+        if dados:
+            df = pd.DataFrame(dados)
+            # Mostra a tabela na tela ocupando a largura total
             st.dataframe(df, use_container_width=True)
+            
+            # Pequeno resumo abaixo da tabela
+            st.info(f"Exibindo {len(df)} linhas da aba '{aba_selecionada}'.")
         else:
-            st.info("A aba selecionada está vazia.")
+            st.warning("Esta aba parece estar vazia.")
             
     except Exception as e:
-        st.error(f"Erro ao carregar dados: {e}")
+        st.error(f"Erro ao ler a planilha: {e}")
+        st.info("Dica: Verifique se o e-mail da conta de serviço tem permissão de Editor na planilha.")
 else:
-    st.info("Aguardando configuração correta dos segredos.")
+    st.warning("Aguardando a configuração correta das credenciais no painel do Streamlit.")
