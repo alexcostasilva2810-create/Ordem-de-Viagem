@@ -84,12 +84,15 @@ if pagina == "📊 Simulações":
     v_des = c5.selectbox("Destino", df_rot.iloc[:,1].unique() if not df_rot.empty else ["-"])
     v_chf = c6.text_input("Chefe de Máquinas")
 
-    # --- LINHA 3 ---
+   # --- LINHA 3 ---
     c7, c8, c9, _ = st.columns([1, 1, 1, 5])
-    v_vol = c7.number_input("Volume (m³)", min_value=0.0, max_value=5000000.0, step=100.0)
+    
+    # AJUSTE: Volume agora é um número inteiro (sem ,00)
+    # O Streamlit coloca automaticamente o ponto de milhar (350.000)
+    v_vol = c7.number_input("Volume (m³)", min_value=0, max_value=5000000, step=1, format="%d")
+    
     v_fat = c8.number_input("Faturamento (R$)", min_value=0.0)
     v_hor = c9.number_input("Horímetro", min_value=0.0)
-
     # --- LINHA 4 ---
     c10, c11, c12, _ = st.columns([1, 1, 1, 5])
     v_tmp = c10.number_input("Tempo Previsto (H)", min_value=0)
