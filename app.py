@@ -68,8 +68,8 @@ def carregar_dados(aba):
 # =========================================================
 # BLOCO 3: PÁGINA DE SIMULAÇÕES
 # =========================================================
-if pagina == "Simulações":
-    st.title("ZION - Gestão PCO")
+if pagina == "📊 Simulações":
+    st.title("🚢 ZION - Gestão PCO")
 
     if 'dados_edit' not in st.session_state:
         st.session_state.dados_edit = None
@@ -162,11 +162,11 @@ if pagina == "Simulações":
 # =========================================================
 # BLOCO 4: OUTRAS PÁGINAS
 # =========================================================
-elif pagina == " Ativos":
+elif pagina == "📋 Ativos":
     st.dataframe(carregar_dados("Ativos"), use_container_width=True)
-elif pagina == " Balsas":
+elif pagina == "⛴️ Balsas":
     st.dataframe(carregar_dados("Balsas"), use_container_width=True)
-elif pagina == " Rotas":
+elif pagina == "📍 Rotas":
     st.dataframe(carregar_dados("Rotas"), use_container_width=True)
-elif pagina == " Histórico":
+elif pagina == "📜 Histórico":
     st.dataframe(carregar_dados("Historico"), use_container_width=True)
