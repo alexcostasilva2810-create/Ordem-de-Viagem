@@ -126,13 +126,98 @@ if client:
     # ==========================================
     # # 09 - BLOCO: SIMULAÇÕES #
     # ==========================================
-    with t_sim:
-        st.subheader("Simulador de Operações")
-        df_sim = buscar_dados(client, "Simulacoes")
-        if not df_sim.empty:
-            st.dataframe(df_sim, use_container_width=True, hide_index=True)
-        else:
-            st.info("Aba 'Simulacoes' sem dados ou não encontrada.")
+   import streamlit as st
+import pandas as pd
+from datetime import datetime
+from fpdf import FPDF # Precisará adicionar 'fpdf' no seu requirements.txt
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 
+# --- FUNÇÃO AUXILIAR PARA GERAR PDF ---
+def gerar_pdf_viagem(dados):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, "ZION - PLANEJAMENTO DE VIAGEM (PCO)", ln=True, align='C')
+    pdf.ln(10)
+    pdf.set_font("Arial", size=12)
+    for chave, valor in dados.items():
+        pdf.cell(200, 10, f"{chave}: {valor}", ln=True)
+    return pdf.output(dest='S').encode('latin-1')
+
+# --- DENTRO DA INTERFACE PRINCIPAL ---
+with t_sim:
+    st.header("📊 Simulador de Planejamento (PCO)")
+    
+    # 1. LÓGICA DE NÚMERO AUTOMÁTICO
+    # Gera um ID baseado na data/hora para ser único
+    id_automatico = datetime.now().strftime("VGN-%Y%m%d-%H%M")
+    
+    with st.form("form_simulacao"):
+        st.info(f"Nº da Viagem Gerado: **{id_automatico}**")
+        
+        c1, c2 = st.columns(2)
+        
+        with c1:
+            # DROPDOWN PUXANDO DOS ATIVOS (EMPURRADORES)
+            lista_emp = df_ativos['Nome'].tolist() if not df_ativos.empty else ["Nenhum Ativo Cadastrado"]
+            v_empurrador = st.selectbox("Empurrador", lista_emp)
+            
+            # DROPDOWN PUXANDO DAS BALSAS
+            lista_bal = df_balsas['Nome'].tolist() if not df_balsas.empty else ["Nenhuma Balsa Cadastrada"]
+            v_balsas = st.multiselect("Balsas", lista_bal)
+            
+            # DROPDOWN PUXANDO DAS ROTAS
+            lista_rot = df_rotas['Nome'].tolist() if not df_rotas.empty else ["Nenhuma Rota Cadastrada"]
+            v_rota = st.selectbox("Rota", lista_rot)
+            
+            v_volume = st.number_input("Volume Transportado", min_value=0.0)
+            v_faturamento = st.number_input("Faturamento (R$)", min_value=0.0)
+
+        with c2:
+            v_tempo = st.number_input("Tempo Previsto de Navegação (Horas)", min_value=0)
+            v_combustivel = st.number_input("Combustível da Viagem (Litros)", min_value=0)
+            v_comandante = st.text_input("Comandante")
+            v_chefe = st.text_input("Chefe de Máquinas")
+            v_horimetro = st.number_input("Horímetro Inicial", min_value=0.0)
+
+        submit = st.form_submit_button("Gerar Planejamento")
+
+    if submit:
+        # Dicionário com os dados consolidados
+        dados_viagem = {
+            "Nº Viagem": id_automatico,
+            "Empurrador": v_empurrador,
+            "Balsas": ", ".join(v_balsas),
+            "Rota": v_rota,
+            "Volume": v_volume,
+            "Faturamento": f"R$ {v_faturamento:,.2f}",
+            "Tempo Previsto": f"{v_tempo} h",
+            "Combustivel": f"{v_combustivel} L",
+            "Comandante": v_comandante,
+            "Chefe de Maquinas": v_chefe,
+            "Horimetro": v_horimetro
+        }
+
+        st.success("✅ Planejamento Concluído!")
+        
+        # --- BOTÕES DE EXPORTAÇÃO ---
+        col_pdf, col_email = st.columns(2)
+        
+        with col_pdf:
+            pdf_bytes = gerar_pdf_viagem(dados_viagem)
+            st.download_button(
+                label="📥 Baixar PDF da Viagem",
+                data=pdf_bytes,
+                file_name=f"Plano_{id_automatico}.pdf",
+                mime="application/pdf"
+            )
+            
+        with col_email:
+            if st.button("📧 Enviar por E-mail aos Gestores"):
+                # Aqui entra a lógica de SMTP (precisaremos das suas credenciais de email)
+                st.warning("Configuração de SMTP pendente (preciso do seu e-mail de envio).")
 else:
     st.warning("Aguardando conexão com o banco de dados (Bloco # 02).")
