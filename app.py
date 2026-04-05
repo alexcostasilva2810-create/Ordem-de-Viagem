@@ -5,20 +5,34 @@ import pandas as pd
 from datetime import datetime
 
 # ==========================================
-# # 01 - CONFIGURAÇÕES GERAIS E ESTILO COMPACTO #
+# # 01 - CONFIGURAÇÕES GERAIS E ESTILO #
 # ==========================================
 st.set_page_config(page_title="ZION - PCO", layout="wide")
 
-# CSS para eliminar espaços vazios e compactar os campos
+# CSS para fixar largura de 5cm (190px) e compactar linhas
 st.markdown("""
     <style>
-    .block-container {padding-top: 0.5rem; padding-bottom: 0rem; padding-left: 2rem; padding-right: 2rem;}
-    div.stBlock { margin-bottom: -1.5rem; }
-    label { font-size: 13px !important; font-weight: bold; margin-bottom: -0.8rem !important; }
-    .stSelectbox, .stTextInput, .stNumberInput, .stMultiSelect { margin-bottom: -1rem !important; }
-    button[data-baseweb="tab"] { height: 35px; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    h1 { font-size: 22px !important; margin-bottom: 0rem; }
+    /* Compacta o container principal */
+    .block-container {padding-top: 1rem; padding-left: 2rem;}
+    
+    /* Força a largura de aproximadamente 5cm em todos os campos de entrada */
+    div[data-testid="stSelectbox"], 
+    div[data-testid="stTextInput"], 
+    div[data-testid="stNumberInput"], 
+    div[data-testid="stMultiSelect"],
+    .stButton > button {
+        width: 190px !important;
+    }
+
+    /* Aproxima as linhas verticalmente */
+    div.row-widget.stHorizontal { gap: 1rem; }
+    div[data-testid="stForm"] { border: none; padding: 0; }
+    
+    /* Ajuste de labels */
+    label { font-size: 13px !important; font-weight: bold; }
+    
+    /* Remove espaços extras entre colunas e widgets */
+    [data-testid="column"] { width: auto !important; flex: none !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -61,13 +75,11 @@ st.title("🚢 ZION - Gestão PCO Online")
 client = conectar_google()
 
 if client:
-    # Carregamento de dados para os dropdowns
     df_ativos = buscar_dados(client, "Ativos")
     df_balsas = buscar_dados(client, "Balsas")
     df_trip   = buscar_dados(client, "Tripulação")
     df_rotas  = buscar_dados(client, "Rotas")
 
-    # Interface em Abas
     t_ativos, t_balsas, t_trip, t_rotas, t_sim = st.tabs([
         "📋 Ativos", "⛴️ Balsas", "👥 Tripulação", "📍 Rotas", "📊 Simulações"
     ])
@@ -78,14 +90,14 @@ if client:
     with t_rotas:  st.dataframe(df_rotas, use_container_width=True, hide_index=True)
 
     # ==========================================
-    # # 09 - BLOCO: SIMULAÇÕES (VISÃO ULTRA COMPACTA) #
+    # # 09 - BLOCO: SIMULAÇÕES (COMPACTO 5CM) #
     # ==========================================
     with t_sim:
         id_viagem_auto = datetime.now().strftime("VGN-%Y%m%d-%H%M")
-        st.write(f"**Planejamento de Viagem:** `{id_viagem_auto}`")
+        st.subheader(f"🚀 Planejamento: {id_viagem_auto}")
         
-        with st.form("form_pco_pro"):
-            # LINHA 1: Recursos
+        with st.form("form_pco_final"):
+            # Linha 1
             c1, c2, c3 = st.columns(3)
             with c1:
                 opt_emp = df_ativos.iloc[:, 0].tolist() if not df_ativos.empty else ["-"]
@@ -96,33 +108,36 @@ if client:
             with c3:
                 v_comandante = st.text_input("Comandante")
 
-            # LINHA 2: Origem e Destino (Puxando de Rotas)
+            # Linha 2
             c4, c5, c6 = st.columns(3)
             with c4:
-                # Pega a 1ª coluna de Rotas para Origem
                 opt_origem = df_rotas.iloc[:, 0].unique().tolist() if not df_rotas.empty else ["-"]
                 v_origem = st.selectbox("Origem", opt_origem)
             with c5:
-                # Pega a 2ª coluna de Rotas para Destino (ou a 1ª se só tiver uma)
                 col_dest = 1 if len(df_rotas.columns) > 1 else 0
                 opt_destino = df_rotas.iloc[:, col_dest].unique().tolist() if not df_rotas.empty else ["-"]
                 v_destino = st.selectbox("Destino", opt_destino)
             with c6:
                 v_chefe = st.text_input("Chefe de Máquinas")
 
-            # LINHA 3: Operacional e Financeiro
+            # Linha 3
             c7, c8, c9 = st.columns(3)
             with c7:
                 v_vol = st.number_input("Volume", min_value=0.0)
-                v_fat = st.number_input("Faturamento (R$)", min_value=0.0)
             with c8:
-                v_tempo = st.number_input("Tempo (Horas)", min_value=0)
-                v_comb = st.number_input("Combustível (L)", min_value=0)
+                v_fat = st.number_input("Faturamento (R$)", min_value=0.0)
             with c9:
                 v_horimetro = st.number_input("Horímetro", min_value=0.0)
 
-            st.write("---")
-            btn_validar = st.form_submit_button("VALIDAR PLANEJAMENTO E NOTIFICAR")
+            # Linha 4
+            c10, c11 = st.columns(2)
+            with c10:
+                v_tempo = st.number_input("Tempo (Horas)", min_value=0)
+            with c11:
+                v_comb = st.number_input("Combustível (L)", min_value=0)
+
+            st.markdown("---")
+            btn_validar = st.form_submit_button("VALIDAR PLANEJAMENTO")
 
         if btn_validar:
             st.success(f"Viagem {id_viagem_auto} registrada!")
@@ -130,4 +145,4 @@ if client:
             ca1.button("📥 Gerar PDF")
             ca2.button("📧 Enviar E-mail")
 else:
-    st.error("Sem conexão com o Google.")
+    st.error("Erro na conexão.")
