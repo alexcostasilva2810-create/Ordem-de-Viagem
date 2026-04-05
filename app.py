@@ -7,15 +7,13 @@ from fpdf import FPDF
 import ast
 
 # =========================================================
-# CONFIGURAÇÕES E ESTILO (LAYOUT ORIGINAL)
+# 1. CONFIGURAÇÕES E ESTILO (LAYOUT IMAGEM 1)
 # =========================================================
 st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
 
-# Inicialização do estado para carregar dados sem erro
 if 'dados_edit' not in st.session_state:
     st.session_state.dados_edit = None
 
-# CSS mantendo o padrão visual da Imagem 1
 st.markdown("""
     <style>
     .block-container { padding-top: 1rem; }
@@ -23,9 +21,33 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# =========================================================
-# FUNÇÕES DE APOIO
-# =========================================================
+# --- FUNÇÃO PDF COM BORDA E MARCA D'ÁGUA ---
+class PDF_ZION(FPDF):
+    def header(self):
+        self.rect(5, 5, 200, 287)
+        try: self.image('fundo_offshore.jpg', x=10, y=50, w=190, h=150)
+        except: pass
+        self.set_font('Arial', 'B', 16)
+        self.set_text_color(7, 55, 99)
+        self.cell(0, 15, 'ZION TECNOLOGIA - RESUMO DE VIAGEM', border=0, ln=True, align='C')
+        self.ln(5)
+
+def gerar_pdf_pco(dados):
+    pdf = PDF_ZION()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 11)
+    for chave, valor in dados.items():
+        if chave == "Observações":
+            pdf.ln(5); pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, "OBSERVAÇÕES:", ln=True)
+            pdf.set_font("Arial", "", 11)
+            pdf.multi_cell(0, 8, str(valor), border=1)
+        else:
+            pdf.set_font("Arial", "B", 11); pdf.cell(50, 10, f"{chave}:", border='B')
+            pdf.set_font("Arial", "", 11); pdf.cell(0, 10, f" {valor}", border='B', ln=True)
+    return pdf.output(dest="S").encode("latin-1")
+
+# --- CONEXÃO GOOGLE SHEETS ---
 def obter_cliente():
     try:
         s = st.secrets["gcp_service_account"]
@@ -40,21 +62,22 @@ def carregar_dados(aba):
         try:
             sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
             data = sh.worksheet(aba).get_all_values()
-            return pd.DataFrame(data[1:], columns=data[0])
+            return pd.DataFrame(data[1:], columns=data[0]) if len(data) > 1 else pd.DataFrame()
         except: return pd.DataFrame()
     return pd.DataFrame()
 
 # =========================================================
-# INTERFACE (LAYOUT ORIGINAL DA IMAGEM 1)
+# 2. INTERFACE E SIDEBAR
 # =========================================================
-st.sidebar.image("icone ZION.png") # Ajustado para o icone
+try: st.sidebar.image("icone ZION.png", use_container_width=True)
+except: pass
 st.sidebar.title("MENU ZION")
 pagina = st.sidebar.radio("Navegação", ["📊 Simulações", "📜 Histórico"])
 
 if pagina == "📊 Simulações":
     st.title("🚢 ZION - Gestão PCO")
 
-    # --- BUSCA DE REGISTRO (Corrigido para não perder o layout) ---
+    # --- BUSCA (EXPANDER) ---
     with st.expander("🔍 BUSCAR REGISTRO PARA EDIÇÃO"):
         df_hist = carregar_dados("Historico")
         if not df_hist.empty:
@@ -65,31 +88,43 @@ if pagina == "📊 Simulações":
                     st.session_state.dados_edit = df_hist[df_hist.iloc[:, 0] == selecionado].iloc[0].to_dict()
                     st.rerun()
 
-    # Exibe o ID corretamente
+    # ID DO REGISTRO
     vgn_id = st.session_state.dados_edit.get('ID') if st.session_state.dados_edit else datetime.now().strftime("VGM %d%m-%H%M")
     st.subheader(f"Registro: {vgn_id}")
 
-    # Layout das colunas exatamente como na imagem 1
-    c1, c2, c3 = st.columns(3)
+    # CARREGAR LISTAS DAS ABAS
     df_atv = carregar_dados("Ativos")
+    df_bal = carregar_dados("Balsas")
+    df_rot = carregar_dados("Rotas")
+
+    # --- LINHA 1 (Empurrador | Balsas | Comandante) ---
+    c1, c2, c3 = st.columns(3)
     v_emp = c1.selectbox("Empurrador", df_atv.iloc[:,0] if not df_atv.empty else ["-"])
-    v_bal = c2.multiselect("Balsas", []) # Placeholder para o seu select
+    
+    bal_def = []
+    if st.session_state.dados_edit:
+        try: bal_def = ast.literal_eval(st.session_state.dados_edit.get('Balsas', '[]'))
+        except: bal_def = []
+    v_bal_sel = c2.multiselect("Balsas", df_bal.iloc[:,0] if not df_bal.empty else [], default=bal_def)
     v_com = c3.text_input("Comandante", value=st.session_state.dados_edit.get('Comandante', '') if st.session_state.dados_edit else "")
 
+    # --- LINHA 2 (Origem | Destino | Chefe de Máquinas) ---
     c4, c5, c6 = st.columns(3)
-    v_ori = c4.selectbox("Origem", ["STM", "MIR"]) # Ajuste conforme sua base
-    v_des = c5.selectbox("Destino", ["MIR", "STM"])
-    v_chf = c6.text_input("Chefe de Máquinas")
+    v_ori = c4.selectbox("Origem", df_rot.iloc[:,0].unique() if not df_rot.empty else ["-"])
+    v_des = c5.selectbox("Destino", df_rot.iloc[:,1].unique() if not df_rot.empty else ["-"])
+    v_chf = c6.text_input("Chefe de Máquinas", value=st.session_state.dados_edit.get('Chefe de Máquinas', '') if st.session_state.dados_edit else "")
 
+    # --- LINHA 3 (Volume | Faturamento | Horímetro) ---
     c7, c8, c9 = st.columns(3)
     v_vol = c7.number_input("Volume (m³)", value=float(st.session_state.dados_edit.get('Volume (m³)', 0)) if st.session_state.dados_edit else 0.0)
     v_fat = c8.number_input("Faturamento (R$)", value=float(st.session_state.dados_edit.get('Faturamento (R$)', 0)) if st.session_state.dados_edit else 0.0)
     v_hor = c9.number_input("Horímetro", value=float(st.session_state.dados_edit.get('Horímetro', 0)) if st.session_state.dados_edit else 0.0)
 
+    # --- LINHA 4 (Tempo Previsto | Combustível | Custo Diesel) ---
     c10, c11, c12 = st.columns(3)
-    v_tmp = c10.number_input("Tempo Previsto (H)")
-    v_cbm = c11.number_input("Combustível (L)")
-    v_dsl = c12.number_input("Custo Diesel (R$)")
+    v_tmp = c10.number_input("Tempo Previsto (H)", value=int(st.session_state.dados_edit.get('Tempo Previsto (H)', 0)) if st.session_state.dados_edit else 0)
+    v_cbm = c11.number_input("Combustível (L)", value=int(st.session_state.dados_edit.get('Combustível (L)', 0)) if st.session_state.dados_edit else 0)
+    v_dsl = c12.number_input("Custo Diesel (R$)", value=float(st.session_state.dados_edit.get('Custo Diesel (R$)', 0)) if st.session_state.dados_edit else 0.0)
 
     v_obs = st.text_area("Observações da Viagem", value=st.session_state.dados_edit.get('Observações', '') if st.session_state.dados_edit else "")
 
@@ -98,8 +133,24 @@ if pagina == "📊 Simulações":
     st.markdown(f"### STATUS: <span style='color:{cor}'>{status_viagem}</span>", unsafe_allow_html=True)
 
     if st.button("FINALIZAR E SALVAR"):
-        st.success("✅ Registro processado!")
-        st.session_state.dados_edit = None
+        agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+        lista_final = [vgn_id, v_emp, str(v_bal_sel), v_com, v_ori, v_des, v_vol, v_fat, v_hor, v_tmp, v_cbm, v_dsl, status_viagem, v_obs, agora]
+        
+        client = obter_cliente()
+        if client:
+            sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
+            aba = sh.worksheet("Historico")
+            if st.session_state.dados_edit:
+                try: aba.delete_rows(aba.find(vgn_id).row)
+                except: pass
+            aba.append_row(lista_final)
+            
+            # PDF com Borda e Obs
+            d_pdf = {"ID": vgn_id, "Empurrador": v_emp, "Comandante": v_com, "Volume": f"{v_vol} m3", "Faturamento": f"R$ {v_fat}", "Status": status_viagem, "Observações": v_obs}
+            pdf_bytes = gerar_pdf_pco(d_pdf)
+            st.success("✅ Salvo!")
+            st.download_button("📥 BAIXAR PDF", pdf_bytes, f"{vgn_id}.pdf", "application/pdf")
+            st.session_state.dados_edit = None
 
 elif pagina == "📜 Histórico":
     st.title("📜 Histórico")
