@@ -5,44 +5,37 @@ import pandas as pd
 from datetime import datetime
 
 # =========================================================
-# BLOCO 1: CONFIGURAÇÕES DE TELA E NAVEGAÇÃO LATERAL
+# BLOCO 1: CONFIGURAÇÕES E LOGO NO MENU LATERAL
 # =========================================================
 st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
 
-# CSS para esconder o menu superior padrão e ajustar a estética
+# Estilos para travar o layout e cores
 st.markdown("""
     <style>
     .block-container { padding-top: 1.5rem; }
-    /* Ajuste de largura dos campos */
     .stSelectbox, .stTextInput, .stNumberInput, .stMultiSelect { max-width: 210px !important; }
-    /* Estilo do Botão Final */
     .stButton > button { 
-        width: 100% !important; 
-        max-width: 250px;
-        background-color: #073763; 
-        color: white; 
-        font-weight: bold;
-        height: 3em;
+        width: 100% !important; max-width: 250px;
+        background-color: #073763; color: white; font-weight: bold; height: 3em;
     }
-    /* Estilo da Sidebar */
-    section[data-testid="stSidebar"] { background-color: #f8f9fa; border-right: 1px solid #e0e0e0; }
     </style>
 """, unsafe_allow_html=True)
 
-# Menu Lateral Elegante
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3061/3061440.png", width=50) # Ícone de navio opcional
+# --- MENU LATERAL (AQUI FICA A SUA LOGO) ---
+try:
+    # Tenta carregar a imagem que você subiu na raiz
+    st.sidebar.image("icone ZION.png", use_container_width=True)
+except:
+    st.sidebar.warning("Arquivo 'icone ZION.png' não encontrado no GitHub.")
+
 st.sidebar.title("MENU ZION")
 pagina = st.sidebar.radio(
     "Navegação",
-    ["📊 Simulações", "📋 Ativos", "⛴️ Balsas", "📍 Rotas", "📜 Histórico"],
-    index=0
+    ["📊 Simulações", "📋 Ativos", "⛴️ Balsas", "📍 Rotas", "📜 Histórico"]
 )
 
-st.sidebar.markdown("---")
-st.sidebar.info("ZION - Gestão PCO v2.0")
-
 # =========================================================
-# BLOCO 2: CONEXÃO COM GOOGLE SHEETS
+# BLOCO 2: CONEXÃO COM A PLANILHA
 # =========================================================
 def obter_cliente():
     try:
@@ -66,14 +59,12 @@ def carregar_dados(aba):
     return pd.DataFrame()
 
 # =========================================================
-# BLOCO 3: INTERFACES DAS PÁGINAS
+# BLOCO 3: PÁGINA DE SIMULAÇÕES (BLOCO 9)
 # =========================================================
-
-# Título fixo no topo com o TIL corrigido
 st.title("🚢 ZION - Gestão PCO")
 
 if pagina == "📊 Simulações":
-    # Registro formatado em Português: VGM DiaMes-HoraMinuto
+    # Formato solicitado: VGM DiaMes-HoraMinuto
     vgn_id = datetime.now().strftime("VGM %d%m-%H%M")
     st.subheader(f"Registro: {vgn_id}")
 
@@ -95,7 +86,7 @@ if pagina == "📊 Simulações":
 
     # --- LINHA 3 ---
     c7, c8, c9, _ = st.columns([1, 1, 1, 5])
-    v_vol = c7.number_input("Volume (m³)", min_value=0.0, max_value=2000000.0)
+    v_vol = c7.number_input("Volume (m³)", min_value=0.0, max_value=5000000.0, step=100.0)
     v_fat = c8.number_input("Faturamento (R$)", min_value=0.0)
     v_hor = c9.number_input("Horímetro", min_value=0.0)
 
@@ -105,8 +96,9 @@ if pagina == "📊 Simulações":
     v_cbm = c11.number_input("Combustível (L)", min_value=0)
     v_custo_diesel = c12.number_input("Custo Diesel (R$)", min_value=0.0)
 
+    # --- OBSERVAÇÕES ---
     st.markdown("---")
-    v_obs = st.text_area("Observações da Viagem", placeholder="Notas extras aqui...")
+    v_obs = st.text_area("Observações da Viagem")
 
     # STATUS E SALVAMENTO
     status_viagem = "Aprovado" if v_fat >= 5000 else "Analise"
@@ -115,15 +107,23 @@ if pagina == "📊 Simulações":
 
     if st.button("FINALIZAR E SALVAR"):
         agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-        lista_final = [vgn_id, v_emp, str(v_bal_sel), v_com, v_ori, v_des, v_vol, v_fat, v_hor, v_tmp, v_cbm, v_custo_diesel, status_viagem, v_obs, agora]
+        lista_final = [
+            vgn_id, v_emp, str(v_bal_sel), v_com, v_ori, v_des, 
+            v_vol, v_fat, v_hor, v_tmp, v_cbm, v_custo_diesel, status_viagem, v_obs, agora
+        ]
+        
         client = obter_cliente()
         if client:
             try:
                 sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
                 sh.worksheet("Historico").append_row(lista_final)
                 st.success(f"✅ Viagem {vgn_id} salva com sucesso!")
-            except Exception as e: st.error(f"Erro: {e}")
+            except Exception as e:
+                st.error(f"Erro ao salvar: {e}")
 
+# =========================================================
+# BLOCO 4: DEMAIS PÁGINAS (VISUALIZAÇÃO)
+# =========================================================
 elif pagina == "📋 Ativos":
     st.dataframe(carregar_dados("Ativos"), use_container_width=True)
 
