@@ -23,7 +23,7 @@ def conectar_google():
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"Erro no Bloco # 02: {e}")
+        st.error(f"Erro na Conexão (Bloco 02): {e}")
         return None
 
 # ==========================================
@@ -36,53 +36,34 @@ def buscar_dados(client, nome_aba):
         worksheet = sh.worksheet(nome_aba)
         dados = worksheet.get_all_values()
         if len(dados) > 1:
-            # Assume que a primeira linha são os nomes das colunas
             return pd.DataFrame(dados[1:], columns=dados[0])
         return pd.DataFrame()
     except:
         return pd.DataFrame()
 
 # ==========================================
-# # MAIN APP - EXECUÇÃO #
+# # EXECUÇÃO PRINCIPAL #
 # ==========================================
 st.title("🚢 ZION - Gestão PCO Online")
-st.markdown("---")
-
 client = conectar_google()
 
 if client:
-    # Pré-carregamento dos dados para alimentar os dropdowns do Bloco 09
+    # Carregando as bases de dados
     df_ativos = buscar_dados(client, "Ativos")
     df_balsas = buscar_dados(client, "Balsas")
     df_trip   = buscar_dados(client, "Tripulação")
     df_rotas  = buscar_dados(client, "Rotas")
 
-    # ==========================================
-    # # 04 - INTERFACE DE NAVEGAÇÃO (TABS) #
-    # ==========================================
+    # # 04 - INTERFACE DE NAVEGAÇÃO (TABS)
     t_ativos, t_balsas, t_trip, t_rotas, t_sim = st.tabs([
         "📋 Ativos", "⛴️ Balsas", "👥 Tripulação", "📍 Rotas", "📊 Simulações"
     ])
 
-    # # 05 - BLOCO: ATIVOS
-    with t_ativos:
-        st.subheader("Cadastro de Ativos")
-        st.dataframe(df_ativos, use_container_width=True, hide_index=True)
-
-    # # 06 - BLOCO: BALSAS
-    with t_balsas:
-        st.subheader("Cadastro de Balsas")
-        st.dataframe(df_balsas, use_container_width=True, hide_index=True)
-
-    # # 07 - BLOCO: TRIPULAÇÃO
-    with t_trip:
-        st.subheader("Cadastro de Tripulação")
-        st.dataframe(df_trip, use_container_width=True, hide_index=True)
-
-    # # 08 - BLOCO: ROTAS
-    with t_rotas:
-        st.subheader("Cadastro de Rotas")
-        st.dataframe(df_rotas, use_container_width=True, hide_index=True)
+    # # 05 a # 08 - VISUALIZAÇÃO DAS TABELAS
+    with t_ativos: st.dataframe(df_ativos, use_container_width=True, hide_index=True)
+    with t_balsas: st.dataframe(df_balsas, use_container_width=True, hide_index=True)
+    with t_trip:   st.dataframe(df_trip, use_container_width=True, hide_index=True)
+    with t_rotas:  st.dataframe(df_rotas, use_container_width=True, hide_index=True)
 
     # ==========================================
     # # 09 - BLOCO: SIMULAÇÕES (PCO) #
@@ -90,58 +71,48 @@ if client:
     with t_sim:
         st.subheader("🚀 Planejamento de Viagem")
         
-        # Nº da viagem automático baseado em Data e Hora
+        # Gerador Automático de Nº de Viagem
         id_viagem_auto = datetime.now().strftime("VGN-%Y%m%d-%H%M")
         
-        with st.form("form_planejamento_pco"):
+        with st.form("form_planejamento_viagem"):
             st.markdown(f"**Nº da Viagem:** `{id_viagem_auto}`")
-            
             col1, col2 = st.columns(2)
             
             with col1:
-                # Dropdown Empurrador (Busca da aba Ativos)
-                # IMPORTANTE: A coluna na planilha deve se chamar 'Nome'
-                opcoes_emp = df_ativos['Nome'].unique() if not df_ativos.empty else ["Cadastre Ativos primeiro"]
-                v_empurrador = st.selectbox("Empurrador", opcoes_emp)
+                # Pega a 1ª coluna de cada DF para os dropdowns (evita erro de nome de coluna)
+                lista_emp = df_ativos.iloc[:, 0].tolist() if not df_ativos.empty else ["Sem dados"]
+                v_empurrador = st.selectbox("Empurrador", lista_emp)
                 
-                # Dropdown Balsas (Busca da aba Balsas)
-                opcoes_bal = df_balsas['Nome'].unique() if not df_balsas.empty else ["Cadastre Balsas primeiro"]
-                v_balsas = st.multiselect("Balsas", opcoes_bal)
+                lista_bal = df_balsas.iloc[:, 0].tolist() if not df_balsas.empty else ["Sem dados"]
+                v_balsas = st.multiselect("Balsas", lista_bal)
                 
-                # Dropdown Rota (Busca da aba Rotas)
-                opcoes_rot = df_rotas['Nome'].unique() if not df_rotas.empty else ["Cadastre Rotas primeiro"]
-                v_rota = st.selectbox("Rota", opcoes_rot)
+                lista_rot = df_rotas.iloc[:, 0].tolist() if not df_rotas.empty else ["Sem dados"]
+                v_rota = st.selectbox("Rota", lista_rot)
                 
-                v_volume = st.number_input("Volume Transportado", min_value=0.0, step=1.0)
-                v_faturamento = st.number_input("Faturamento (R$)", min_value=0.0, step=100.0)
+                v_volume = st.number_input("Volume Transportado", min_value=0.0)
+                v_faturamento = st.number_input("Faturamento (R$)", min_value=0.0)
 
             with col2:
                 v_tempo = st.number_input("Tempo previsto de navegação (Horas)", min_value=0)
                 v_combustivel = st.number_input("Combustível da viagem (litros)", min_value=0)
-                
-                # Campos de preenchimento manual conforme solicitado
                 v_comandante = st.text_input("Comandante")
-                v_chefe_maquinas = st.text_input("Chefe de Máquinas")
-                v_horimetro = st.number_input("Horímetros (Inicial)", min_value=0.0, step=0.1)
+                v_chefe = st.text_input("Chefe de Máquinas")
+                v_horimetro = st.number_input("Horímetros (Inicial)", min_value=0.0)
 
-            # Botão de submissão do formulário
-            enviado = st.form_submit_button("VALIDAR PLANEJAMENTO")
+            # O BOTÃO QUE FALTAVA (SUBMIT)
+            btn_validar = st.form_submit_button("VALIDAR PLANEJAMENTO")
 
-        if enviado:
-            st.success(f"Planejamento da Viagem {id_viagem_auto} gerado com sucesso!")
+        if btn_validar:
+            st.success(f"Viagem {id_viagem_auto} validada com sucesso!")
             
-            # Área de Ações Pós-Planejamento
+            # Rodapé de Ações
             st.markdown("---")
-            c_acao1, c_acao2 = st.columns(2)
-            
-            with c_acao1:
-                # Placeholder para o PDF (necessário biblioteca fpdf no requirements.txt)
+            c1, c2 = st.columns(2)
+            with c1:
                 st.button("📥 Gerar PDF do Planejamento")
-            
-            with c_acao2:
-                # Placeholder para o E-mail
-                st.button("📧 Enviar para Gestores")
-                st.caption("Destinatário: gestao@zion.com.br (Exemplo)")
+            with c2:
+                st.button("📧 Enviar por E-mail")
+                st.caption("Destinatário padrão: pco.gestao@zion.com")
 
 else:
-    st.warning("Sistema Offline: Erro na conexão com o Google Sheets (Bloco # 02).")
+    st.error("Erro crítico: Verifique as credenciais no Bloco # 02.")
