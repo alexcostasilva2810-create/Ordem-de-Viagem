@@ -7,136 +7,146 @@ from fpdf import FPDF
 import ast
 
 # =========================================================
-# 1. CONFIGURAÇÃO E CSS DINÂMICO
+# 1. CONFIGURAÇÃO E DESIGN COMPACTO
 # =========================================================
 st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
 
 if 'dados_edit' not in st.session_state:
     st.session_state.dados_edit = None
 
-# Sidebar simplificada
+# Sidebar
 with st.sidebar:
     try: st.image("icone ZION.png", width=160)
     except: pass
     st.title("MENU ZION")
     pagina = st.radio("Navegação", ["📊 Simulações", "📜 Histórico"])
 
-# CSS condicional: Compacto na simulação, Largo no histórico
+# CSS Condicional: Simulação (Compacto) vs Histórico (Largo)
 if pagina == "📊 Simulações":
     st.markdown("""
         <style>
         .block-container { max-width: 1050px; padding-top: 1rem; margin: auto; }
-        .stNumberInput, .stTextInput, .stSelectbox, .stMultiSelect { width: 220px !important; }
-        div[data-testid="stVerticalBlock"] > div { margin-top: -0.7rem; }
+        .stNumberInput, .stTextInput, .stSelectbox, .stMultiSelect { width: 230px !important; }
+        div[data-testid="stVerticalBlock"] > div { margin-top: -0.8rem; }
         .stButton > button { background-color: #073763; color: white; font-weight: bold; width: 200px; }
         </style>
     """, unsafe_allow_html=True)
 else:
-    st.markdown("""
-        <style>
-        .block-container { max-width: 100% !important; padding: 2rem; }
-        </style>
-    """, unsafe_allow_html=True)
+    st.markdown("<style>.block-container { max-width: 100% !important; }</style>", unsafe_allow_html=True)
 
 # =========================================================
-# 2. CONEXÃO E CARREGAMENTO (DROPDOWNS DINÂMICOS)
+# 2. CLASSE PDF PERSONALIZADA
+# =========================================================
+class PDF_ZION(FPDF):
+    def header(self):
+        # Moldura/Borda do PDF
+        self.rect(5, 5, 200, 287)
+        try: self.image('icone ZION.png', x=10, y=8, w=20)
+        except: pass
+        self.set_font('Arial', 'B', 14)
+        self.set_text_color(7, 55, 99)
+        # Cabeçalho solicitado
+        self.cell(0, 10, 'Ordem de Viagem - Transdourada', align='C', ln=True)
+        self.ln(10)
+
+def gerar_pdf_ordem(dados):
+    pdf = PDF_ZION()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 10)
+    
+    for k, v in dados.items():
+        pdf.set_font("Arial", "B", 10); pdf.cell(50, 8, f"{k}:", border='B')
+        pdf.set_font("Arial", "", 10); pdf.cell(0, 8, f" {v}", border='B', ln=True)
+    
+    return pdf.output(dest="S").encode("latin-1")
+
+# =========================================================
+# 3. CONEXÃO E DADOS
 # =========================================================
 def obter_cliente():
     try:
-        s = st.secrets["gcp_service_account"]
-        creds = Credentials.from_service_account_info(s, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], 
+                scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
         return gspread.authorize(creds)
     except: return None
 
-def carregar_lista_aba(nome_aba, coluna=1):
-    client = obter_cliente()
-    if not client: return []
+def carregar_lista(aba, col=1):
     try:
-        sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
-        valores = sh.worksheet(nome_aba).col_values(coluna)[1:]
-        return [v for v in valores if v.strip() != ""]
+        sh = obter_cliente().open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
+        return [v for v in sh.worksheet(aba).col_values(col)[1:] if v.strip()]
     except: return []
 
-@st.cache_data(ttl=5)
-def carregar_historico_df():
-    client = obter_cliente()
-    try:
-        sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
-        data = sh.worksheet("Historico").get_all_values()
-        df = pd.DataFrame(data[1:], columns=data[0])
-        return df.loc[:, ~df.columns.duplicated()] # Resolve o erro de colunas duplicadas
-    except: return pd.DataFrame()
-
 # =========================================================
-# 3. PÁGINA: SIMULAÇÕES
+# 4. TELA DE SIMULAÇÕES
 # =========================================================
 if pagina == "📊 Simulações":
-    # Cabeçalho Zion
-    c_img, c_tit = st.columns([0.1, 0.9])
-    with c_img: 
-        try: st.image("icone ZION.png", width=60)
-        except: pass
-    with c_tit: st.title("ZION - Gestão PCO")
+    st.title("ZION - Gestão PCO")
+    
+    ativos = carregar_lista("Ativos")
+    balsas = carregar_lista("Balsas")
+    origens = list(set(carregar_lista("Rotas", 1)))
+    destinos = list(set(carregar_lista("Rotas", 2)))
+    edit = st.session_state.get('dados_edit', {})
 
-    with st.expander("🔍 BUSCAR REGISTRO PARA EDIÇÃO"):
-        df_h = carregar_historico_df()
-        if not df_h.empty:
-            sel = st.selectbox("Selecione ID:", ["---"] + df_h.iloc[:, 0].tolist())
-            if st.button("CARREGAR DADOS"):
-                if sel != "---":
-                    st.session_state.dados_edit = df_h[df_h.iloc[:, 0] == sel].iloc[0].to_dict()
-                    st.rerun()
-
-    v_id = st.session_state.dados_edit.get('ID', datetime.now().strftime("VGM %d%m-%H%M")) if st.session_state.dados_edit else datetime.now().strftime("VGM %d%m-%H%M")
+    v_id = edit.get('ID', datetime.now().strftime("VGM %d%m-%H%M"))
     st.subheader(f"Registro: {v_id}")
 
-    # Carrega listas para os Dropdowns
-    ativos = carregar_lista_aba("Ativos")
-    balsas = carregar_lista_aba("Balsas")
-    origens = list(set(carregar_lista_aba("Rotas", 1)))
-    destinos = list(set(carregar_lista_aba("Rotas", 2)))
-
-    # Grid de 3 Colunas (5cm cada)
     col1, col2, col3 = st.columns(3)
 
     with col1:
         v_emp = st.selectbox("Empurrador", ativos if ativos else ["-"])
         v_ori = st.selectbox("Origem", origens if origens else ["-"])
-        v_vol = st.number_input("Volume (m³)", value=float(st.session_state.dados_edit.get('Volume (m³)', 0)) if st.session_state.dados_edit else 0.0)
-        v_tmp = st.number_input("Tempo Previsto (H)", value=int(st.session_state.dados_edit.get('Tempo Previsto (H)', 0)) if st.session_state.dados_edit else 0)
+        v_vol = st.number_input("Volume (M³)", value=float(edit.get('Volume (m³)', 0)), format="%.3f")
+        v_tmp = st.number_input("Tempo Previsto (H)", value=int(edit.get('Tempo Previsto (H)', 0)))
 
     with col2:
-        try: b_def = ast.literal_eval(st.session_state.dados_edit.get('Balsas', '[]'))
+        try: b_def = ast.literal_eval(edit.get('Balsas', '[]'))
         except: b_def = []
-        v_bal = st.multiselect("Balsas", balsas if balsas else [], default=b_def)
+        v_bal = st.multiselect("Balsas", balsas, default=b_def)
         v_des = st.selectbox("Destino", destinos if destinos else ["-"])
-        v_fat = st.number_input("Faturamento (R$)", value=float(st.session_state.dados_edit.get('Faturamento (R$)', 0)) if st.session_state.dados_edit else 0.0)
-        v_cbm = st.number_input("Combustível (L)", value=int(st.session_state.dados_edit.get('Combustível (L)', 0)) if st.session_state.dados_edit else 0)
+        v_fat = st.number_input("Faturamento (R$)", value=float(edit.get('Faturamento (R$)', 0)), format="%.2f")
+        v_cbm = st.number_input("Combustível (L)", value=int(edit.get('Combustível (L)', 0)))
 
     with col3:
-        v_com = st.text_input("Comandante", value=st.session_state.dados_edit.get('Comandante', "") if st.session_state.dados_edit else "")
-        v_chf = st.text_input("Chefe de Máquinas", value=st.session_state.dados_edit.get('Chefe de Máquinas', "") if st.session_state.dados_edit else "")
-        v_hor = st.number_input("Horímetro", value=float(st.session_state.dados_edit.get('Horímetro', 0)) if st.session_state.dados_edit else 0.0)
-        v_dsl = st.number_input("Custo Diesel (R$)", value=float(st.session_state.dados_edit.get('Custo Diesel (R$)', 0)) if st.session_state.dados_edit else 0.0)
+        v_com = st.text_input("Comandante", value=edit.get('Comandante', ""))
+        v_chf = st.text_input("Chefe de Máquinas", value=edit.get('Chefe de Máquinas', ""))
+        v_hor = st.number_input("Horímetro", value=float(edit.get('Horímetro', 0)))
+        v_dsl = st.number_input("Custo Diesel (R$)", value=float(edit.get('Custo Diesel (R$)', 0)), format="%.2f")
 
-    v_obs = st.text_area("Observações da Viagem", value=st.session_state.dados_edit.get('Observações', "") if st.session_state.dados_edit else "")
-
+    v_obs = st.text_area("Observações da Viagem", value=edit.get('Observações', ""))
+    
     status = "Aprovado" if v_fat >= 50000 else "Analise"
     st.markdown(f"### STATUS: <span style='color:{'green' if status == 'Aprovado' else 'red'}'>{status}</span>", unsafe_allow_html=True)
-
+    
     if st.button("FINALIZAR E SALVAR"):
-        st.success("Registro Salvo!")
+        # Preparar dados para o PDF
+        dados_pdf = {
+            "ID": v_id,
+            "Empurrador": v_emp,
+            "Balsas": ", ".join(v_bal),
+            "Comandante": v_com,
+            "Origem/Destino": f"{v_ori} -> {v_des}",
+            "Volume": f"{v_vol:,.3f} M³",
+            "Faturamento": f"R$ {v_fat:,.2f}",
+            "Custo Diesel": f"R$ {v_dsl:,.2f}",
+            "Status": status,
+            "Observações": v_obs
+        }
+        
+        pdf_bytes = gerar_pdf_ordem(dados_pdf)
+        st.success("Dados processados!")
+        st.download_button("📥 BAIXAR ORDEM DE VIAGEM", pdf_bytes, f"Ordem_{v_id}.pdf", "application/pdf")
         st.session_state.dados_edit = None
 
 # =========================================================
-# 4. PÁGINA: HISTÓRICO (VISUALIZAÇÃO COMPLETA)
+# 5. TELA DE HISTÓRICO (LARGURA TOTAL)
 # =========================================================
 elif pagina == "📜 Histórico":
-    st.image("icone ZION.png", width=50)
-    st.title("Histórico Completo de Viagens")
-    df_full = carregar_historico_df()
-    if not df_full.empty:
-        # Exibe o DataFrame ocupando toda a largura disponível
-        st.dataframe(df_full, use_container_width=True, hide_index=True)
-    else:
-        st.warning("Nenhum dado encontrado no histórico.")
+    st.title("📜 Histórico de Viagens")
+    try:
+        sh = obter_cliente().open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
+        data = sh.worksheet("Historico").get_all_values()
+        df = pd.DataFrame(data[1:], columns=data[0])
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    except:
+        st.error("Erro ao carregar banco de dados.")
