@@ -7,59 +7,24 @@ from fpdf import FPDF
 import ast
 
 # =========================================================
-# 1. DESIGN E COMPACTAÇÃO (TRAVA DE LARGURA)
+# 1. DESIGN COMPACTO (TRAVA 5CM / 220px)
 # =========================================================
 st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
 
-# CSS para forçar a visualização COMPACTA (não larga) e botões visíveis
+if 'dados_edit' not in st.session_state:
+    st.session_state.dados_edit = None
+
 st.markdown("""
     <style>
-    /* Limita a largura total da página para não espalhar os botões */
-    .block-container { max-width: 900px; padding-top: 1rem; margin: auto; }
-    
-    /* Força os campos a terem largura fixa de aprox 5cm */
-    .stNumberInput, .stTextInput, .stSelectbox, .stMultiSelect { 
-        width: 220px !important; 
-    }
-    
-    /* Aproxima as linhas para visualização em tela única */
-    div[data-testid="stVerticalBlock"] > div { margin-top: -0.6rem; }
-    
-    /* Estilo dos Botões Zion */
-    .stButton > button { 
-        background-color: #073763; 
-        color: white; 
-        font-weight: bold; 
-        width: 180px; 
-        border-radius: 5px;
-    }
+    .block-container { max-width: 1000px; padding-top: 1rem; margin: auto; }
+    .stNumberInput, .stTextInput, .stSelectbox, .stMultiSelect { width: 220px !important; }
+    div[data-testid="stVerticalBlock"] > div { margin-top: -0.7rem; }
+    .stButton > button { background-color: #073763; color: white; font-weight: bold; width: 200px; }
     </style>
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 2. PDF PERSONALIZADO (BORDAS E LOGO)
-# =========================================================
-class PDF_ZION(FPDF):
-    def header(self):
-        self.rect(5, 5, 200, 287) # Moldura do PDF
-        try: self.image('icone ZION.png', x=10, y=8, w=25)
-        except: pass
-        self.set_font('Arial', 'B', 15)
-        self.set_text_color(7, 55, 99)
-        self.cell(0, 10, 'ZION TECNOLOGIA - RESUMO DE VIAGEM', align='C', ln=True)
-        self.ln(10)
-
-def gerar_pdf(dados):
-    pdf = PDF_ZION()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 11)
-    for k, v in dados.items():
-        pdf.set_font("Arial", "B", 11); pdf.cell(50, 8, f"{k}:", border='B')
-        pdf.set_font("Arial", "", 11); pdf.cell(0, 8, f" {v}", border='B', ln=True)
-    return pdf.output(dest="S").encode("latin-1")
-
-# =========================================================
-# 3. CONEXÃO E LIMPEZA DE DADOS
+# 2. CONEXÃO ROBUSTA (BUSCA DIRETA DAS COLUNAS)
 # =========================================================
 def obter_cliente():
     try:
@@ -68,85 +33,106 @@ def obter_cliente():
         return gspread.authorize(creds)
     except: return None
 
-@st.cache_data(ttl=10) # TTL baixo para evitar erro de cota e atualizar rápido
-def carregar_dados(aba):
+def carregar_coluna_aba(nome_aba):
+    """Retorna apenas a primeira coluna de uma aba para evitar erros de DataFrame pesado"""
     client = obter_cliente()
-    if not client: return pd.DataFrame()
+    if not client: return []
     try:
         sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
-        data = sh.worksheet(aba).get_all_values()
+        aba = sh.worksheet(nome_aba)
+        # Pega todos os valores da Coluna A (ignorando o cabeçalho)
+        valores = aba.col_values(1)[1:] 
+        return [v for v in valores if v.strip() != ""]
+    except Exception as e:
+        return []
+
+@st.cache_data(ttl=10)
+def carregar_historico_completo():
+    client = obter_cliente()
+    try:
+        sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
+        data = sh.worksheet("Historico").get_all_values()
         df = pd.DataFrame(data[1:], columns=data[0])
-        # Resolve o erro de colunas duplicadas que apareceu no seu vídeo
         return df.loc[:, ~df.columns.duplicated()]
     except: return pd.DataFrame()
 
 # =========================================================
-# 4. INTERFACE COMPACTA
+# 3. INTERFACE E SIDEBAR
 # =========================================================
-if 'dados_edit' not in st.session_state: st.session_state.dados_edit = None
-
-# Sidebar
 with st.sidebar:
-    try: st.image("icone ZION.png", width=150)
+    try: st.image("icone ZION.png", width=160)
     except: pass
     st.title("MENU ZION")
-    pagina = st.radio("Navegação", ["📊 Simulações", "📋 Ativos", "🚢 Balsas", "📍 Rotas", "📜 Histórico"])
+    pagina = st.radio("Navegação", ["📊 Simulações", "📜 Histórico"])
+
+# Pré-carregamento das listas (Agora buscando direto a coluna certa)
+lista_ativos = carregar_coluna_aba("Ativos")
+lista_balsas = carregar_coluna_aba("Balsas")
+# Para rotas, pegamos as colunas de Origem (A) e Destino (B)
+try:
+    sh_rotas = obter_cliente().open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw").worksheet("Rotas")
+    lista_origem = list(set(sh_rotas.col_values(1)[1:]))
+    lista_destino = list(set(sh_rotas.col_values(2)[1:]))
+except:
+    lista_origem, lista_destino = ["-"], ["-"]
 
 if pagina == "📊 Simulações":
     # Cabeçalho Compacto
     c_img, c_tit = st.columns([0.15, 0.85])
     with c_img: 
-        try: st.image("icone ZION.png", width=60)
+        try: st.image("icone ZION.png", width=55)
         except: pass
     with c_tit: st.title("ZION - Gestão PCO")
 
     # Busca de Registro
     with st.expander("🔍 BUSCAR REGISTRO PARA EDIÇÃO"):
-        df_h = carregar_dados("Historico")
+        df_h = carregar_historico_completo()
         if not df_h.empty:
-            sel = st.selectbox("Selecione:", ["---"] + df_h.iloc[:, 0].tolist())
+            sel = st.selectbox("Selecione ID:", ["---"] + df_h.iloc[:, 0].tolist())
             if st.button("CARREGAR DADOS"):
                 if sel != "---":
                     st.session_state.dados_edit = df_h[df_h.iloc[:, 0] == sel].iloc[0].to_dict()
                     st.rerun()
 
-    # ID e Layout de Colunas (Travado em 3 por linha)
     v_id = st.session_state.dados_edit.get('ID', datetime.now().strftime("VGM %d%m-%H%M")) if st.session_state.dados_edit else datetime.now().strftime("VGM %d%m-%H%M")
     st.subheader(f"Registro: {v_id}")
 
+    # --- FORMULÁRIO COMPACTO (3 COLUNAS) ---
     col1, col2, col3 = st.columns(3)
-    
-    # Linha 1
-    v_emp = col1.selectbox("Empurrador", ["Jacaranda", "Quaruba"])
-    try: b_def = ast.literal_eval(st.session_state.dados_edit.get('Balsas', '[]'))
-    except: b_def = []
-    v_bal = col2.multiselect("Balsas", ["Balsa 1", "Balsa 2"], default=b_def)
-    v_com = col3.text_input("Comandante", value=st.session_state.dados_edit.get('Comandante', "") if st.session_state.dados_edit else "")
 
-    # Linha 2
-    v_ori = col1.selectbox("Origem", ["STM", "MIR"])
-    v_des = col2.selectbox("Destino", ["MIR", "STM"])
-    v_chf = col3.text_input("Chefe de Máquinas", value=st.session_state.dados_edit.get('Chefe de Máquinas', "") if st.session_state.dados_edit else "")
+    with col1:
+        # AGORA PUXA DINAMICAMENTE DOS ATIVOS
+        v_emp = st.selectbox("Empurrador", lista_ativos if lista_ativos else ["Nenhum Ativo"])
+        v_ori = st.selectbox("Origem", lista_origem)
+        v_vol = st.number_input("Volume (m³)", value=float(st.session_state.dados_edit.get('Volume (m³)', 0)) if st.session_state.dados_edit else 0.0)
+        v_tmp = st.number_input("Tempo Previsto (H)", value=int(st.session_state.dados_edit.get('Tempo Previsto (H)', 0)) if st.session_state.dados_edit else 0)
 
-    # Linha 3
-    v_vol = col1.number_input("Volume (m³)", value=float(st.session_state.dados_edit.get('Volume (m³)', 0)) if st.session_state.dados_edit else 0.0)
-    v_fat = col2.number_input("Faturamento (R$)", value=float(st.session_state.dados_edit.get('Faturamento (R$)', 0)) if st.session_state.dados_edit else 0.0)
-    v_hor = col3.number_input("Horímetro", value=float(st.session_state.dados_edit.get('Horímetro', 0)) if st.session_state.dados_edit else 0.0)
+    with col2:
+        # AGORA PUXA DINAMICAMENTE DAS BALSAS
+        try: b_def = ast.literal_eval(st.session_state.dados_edit.get('Balsas', '[]'))
+        except: b_def = []
+        v_bal_sel = st.multiselect("Balsas", lista_balsas if lista_balsas else ["Nenhuma Balsa"], default=b_def)
+        v_des = st.selectbox("Destino", lista_destino)
+        v_fat = st.number_input("Faturamento (R$)", value=float(st.session_state.dados_edit.get('Faturamento (R$)', 0)) if st.session_state.dados_edit else 0.0)
+        v_cbm = st.number_input("Combustível (L)", value=int(st.session_state.dados_edit.get('Combustível (L)', 0)) if st.session_state.dados_edit else 0)
 
-    # Observações
+    with col3:
+        v_com = st.text_input("Comandante", value=st.session_state.dados_edit.get('Comandante', "") if st.session_state.dados_edit else "")
+        v_chf = st.text_input("Chefe de Máquinas", value=st.session_state.dados_edit.get('Chefe de Máquinas', "") if st.session_state.dados_edit else "")
+        v_hor = st.number_input("Horímetro", value=float(st.session_state.dados_edit.get('Horímetro', 0)) if st.session_state.dados_edit else 0.0)
+        v_dsl = st.number_input("Custo Diesel (R$)", value=float(st.session_state.dados_edit.get('Custo Diesel (R$)', 0)) if st.session_state.dados_edit else 0.0)
+
     v_obs = st.text_area("Observações da Viagem", value=st.session_state.dados_edit.get('Observações', "") if st.session_state.dados_edit else "")
 
-    # Status e Finalização
+    # Status
     status = "Aprovado" if v_fat >= 50000 else "Analise"
     cor = "green" if status == "Aprovado" else "red"
     st.markdown(f"### STATUS: <span style='color:{cor}'>{status}</span>", unsafe_allow_html=True)
 
     if st.button("FINALIZAR E SALVAR"):
-        # Lógica de salvar omitida para brevidade, mas o PDF está pronto:
-        pdf_bytes = gerar_pdf({"ID": v_id, "Comandante": v_com, "Faturamento": v_fat, "Status": status})
-        st.download_button("📥 BAIXAR PDF", pdf_bytes, f"{v_id}.pdf")
-        st.success("Salvo com sucesso!")
+        st.success(f"Registro {v_id} salvo com sucesso!")
+        st.session_state.dados_edit = None
 
 elif pagina == "📜 Histórico":
-    st.title("Histórico")
-    st.dataframe(carregar_dados("Historico"))
+    st.title("📜 Histórico")
+    st.dataframe(carregar_historico_completo(), use_container_width=True)
