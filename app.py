@@ -7,24 +7,39 @@ from fpdf import FPDF
 import ast
 
 # =========================================================
-# 1. DESIGN COMPACTO (TRAVA 5CM / 220px)
+# 1. CONFIGURAÇÃO E CSS DINÂMICO
 # =========================================================
 st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
 
 if 'dados_edit' not in st.session_state:
     st.session_state.dados_edit = None
 
-st.markdown("""
-    <style>
-    .block-container { max-width: 1000px; padding-top: 1rem; margin: auto; }
-    .stNumberInput, .stTextInput, .stSelectbox, .stMultiSelect { width: 220px !important; }
-    div[data-testid="stVerticalBlock"] > div { margin-top: -0.7rem; }
-    .stButton > button { background-color: #073763; color: white; font-weight: bold; width: 200px; }
-    </style>
-""", unsafe_allow_html=True)
+# Sidebar simplificada
+with st.sidebar:
+    try: st.image("icone ZION.png", width=160)
+    except: pass
+    st.title("MENU ZION")
+    pagina = st.radio("Navegação", ["📊 Simulações", "📜 Histórico"])
+
+# CSS condicional: Compacto na simulação, Largo no histórico
+if pagina == "📊 Simulações":
+    st.markdown("""
+        <style>
+        .block-container { max-width: 1050px; padding-top: 1rem; margin: auto; }
+        .stNumberInput, .stTextInput, .stSelectbox, .stMultiSelect { width: 220px !important; }
+        div[data-testid="stVerticalBlock"] > div { margin-top: -0.7rem; }
+        .stButton > button { background-color: #073763; color: white; font-weight: bold; width: 200px; }
+        </style>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+        <style>
+        .block-container { max-width: 100% !important; padding: 2rem; }
+        </style>
+    """, unsafe_allow_html=True)
 
 # =========================================================
-# 2. CONEXÃO ROBUSTA (BUSCA DIRETA DAS COLUNAS)
+# 2. CONEXÃO E CARREGAMENTO (DROPDOWNS DINÂMICOS)
 # =========================================================
 def obter_cliente():
     try:
@@ -33,60 +48,38 @@ def obter_cliente():
         return gspread.authorize(creds)
     except: return None
 
-def carregar_coluna_aba(nome_aba):
-    """Retorna apenas a primeira coluna de uma aba para evitar erros de DataFrame pesado"""
+def carregar_lista_aba(nome_aba, coluna=1):
     client = obter_cliente()
     if not client: return []
     try:
         sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
-        aba = sh.worksheet(nome_aba)
-        # Pega todos os valores da Coluna A (ignorando o cabeçalho)
-        valores = aba.col_values(1)[1:] 
+        valores = sh.worksheet(nome_aba).col_values(coluna)[1:]
         return [v for v in valores if v.strip() != ""]
-    except Exception as e:
-        return []
+    except: return []
 
-@st.cache_data(ttl=10)
-def carregar_historico_completo():
+@st.cache_data(ttl=5)
+def carregar_historico_df():
     client = obter_cliente()
     try:
         sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
         data = sh.worksheet("Historico").get_all_values()
         df = pd.DataFrame(data[1:], columns=data[0])
-        return df.loc[:, ~df.columns.duplicated()]
+        return df.loc[:, ~df.columns.duplicated()] # Resolve o erro de colunas duplicadas
     except: return pd.DataFrame()
 
 # =========================================================
-# 3. INTERFACE E SIDEBAR
+# 3. PÁGINA: SIMULAÇÕES
 # =========================================================
-with st.sidebar:
-    try: st.image("icone ZION.png", width=160)
-    except: pass
-    st.title("MENU ZION")
-    pagina = st.radio("Navegação", ["📊 Simulações", "📜 Histórico"])
-
-# Pré-carregamento das listas (Agora buscando direto a coluna certa)
-lista_ativos = carregar_coluna_aba("Ativos")
-lista_balsas = carregar_coluna_aba("Balsas")
-# Para rotas, pegamos as colunas de Origem (A) e Destino (B)
-try:
-    sh_rotas = obter_cliente().open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw").worksheet("Rotas")
-    lista_origem = list(set(sh_rotas.col_values(1)[1:]))
-    lista_destino = list(set(sh_rotas.col_values(2)[1:]))
-except:
-    lista_origem, lista_destino = ["-"], ["-"]
-
 if pagina == "📊 Simulações":
-    # Cabeçalho Compacto
-    c_img, c_tit = st.columns([0.15, 0.85])
+    # Cabeçalho Zion
+    c_img, c_tit = st.columns([0.1, 0.9])
     with c_img: 
-        try: st.image("icone ZION.png", width=55)
+        try: st.image("icone ZION.png", width=60)
         except: pass
     with c_tit: st.title("ZION - Gestão PCO")
 
-    # Busca de Registro
     with st.expander("🔍 BUSCAR REGISTRO PARA EDIÇÃO"):
-        df_h = carregar_historico_completo()
+        df_h = carregar_historico_df()
         if not df_h.empty:
             sel = st.selectbox("Selecione ID:", ["---"] + df_h.iloc[:, 0].tolist())
             if st.button("CARREGAR DADOS"):
@@ -97,22 +90,26 @@ if pagina == "📊 Simulações":
     v_id = st.session_state.dados_edit.get('ID', datetime.now().strftime("VGM %d%m-%H%M")) if st.session_state.dados_edit else datetime.now().strftime("VGM %d%m-%H%M")
     st.subheader(f"Registro: {v_id}")
 
-    # --- FORMULÁRIO COMPACTO (3 COLUNAS) ---
+    # Carrega listas para os Dropdowns
+    ativos = carregar_lista_aba("Ativos")
+    balsas = carregar_lista_aba("Balsas")
+    origens = list(set(carregar_lista_aba("Rotas", 1)))
+    destinos = list(set(carregar_lista_aba("Rotas", 2)))
+
+    # Grid de 3 Colunas (5cm cada)
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        # AGORA PUXA DINAMICAMENTE DOS ATIVOS
-        v_emp = st.selectbox("Empurrador", lista_ativos if lista_ativos else ["Nenhum Ativo"])
-        v_ori = st.selectbox("Origem", lista_origem)
+        v_emp = st.selectbox("Empurrador", ativos if ativos else ["-"])
+        v_ori = st.selectbox("Origem", origens if origens else ["-"])
         v_vol = st.number_input("Volume (m³)", value=float(st.session_state.dados_edit.get('Volume (m³)', 0)) if st.session_state.dados_edit else 0.0)
         v_tmp = st.number_input("Tempo Previsto (H)", value=int(st.session_state.dados_edit.get('Tempo Previsto (H)', 0)) if st.session_state.dados_edit else 0)
 
     with col2:
-        # AGORA PUXA DINAMICAMENTE DAS BALSAS
         try: b_def = ast.literal_eval(st.session_state.dados_edit.get('Balsas', '[]'))
         except: b_def = []
-        v_bal_sel = st.multiselect("Balsas", lista_balsas if lista_balsas else ["Nenhuma Balsa"], default=b_def)
-        v_des = st.selectbox("Destino", lista_destino)
+        v_bal = st.multiselect("Balsas", balsas if balsas else [], default=b_def)
+        v_des = st.selectbox("Destino", destinos if destinos else ["-"])
         v_fat = st.number_input("Faturamento (R$)", value=float(st.session_state.dados_edit.get('Faturamento (R$)', 0)) if st.session_state.dados_edit else 0.0)
         v_cbm = st.number_input("Combustível (L)", value=int(st.session_state.dados_edit.get('Combustível (L)', 0)) if st.session_state.dados_edit else 0)
 
@@ -124,15 +121,22 @@ if pagina == "📊 Simulações":
 
     v_obs = st.text_area("Observações da Viagem", value=st.session_state.dados_edit.get('Observações', "") if st.session_state.dados_edit else "")
 
-    # Status
     status = "Aprovado" if v_fat >= 50000 else "Analise"
-    cor = "green" if status == "Aprovado" else "red"
-    st.markdown(f"### STATUS: <span style='color:{cor}'>{status}</span>", unsafe_allow_html=True)
+    st.markdown(f"### STATUS: <span style='color:{'green' if status == 'Aprovado' else 'red'}'>{status}</span>", unsafe_allow_html=True)
 
     if st.button("FINALIZAR E SALVAR"):
-        st.success(f"Registro {v_id} salvo com sucesso!")
+        st.success("Registro Salvo!")
         st.session_state.dados_edit = None
 
+# =========================================================
+# 4. PÁGINA: HISTÓRICO (VISUALIZAÇÃO COMPLETA)
+# =========================================================
 elif pagina == "📜 Histórico":
-    st.title("📜 Histórico")
-    st.dataframe(carregar_historico_completo(), use_container_width=True)
+    st.image("icone ZION.png", width=50)
+    st.title("Histórico Completo de Viagens")
+    df_full = carregar_historico_df()
+    if not df_full.empty:
+        # Exibe o DataFrame ocupando toda a largura disponível
+        st.dataframe(df_full, use_container_width=True, hide_index=True)
+    else:
+        st.warning("Nenhum dado encontrado no histórico.")
