@@ -2,12 +2,12 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from fpdf import FPDF
 import ast
 
 # =========================================================
-# 1. CONFIGURAÇÃO E CSS
+# 1. CONFIGURAÇÃO E CSS (BALSAS FLEXÍVEIS)
 # =========================================================
 st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
 
@@ -17,7 +17,13 @@ if 'dados_edit' not in st.session_state:
 st.markdown("""
     <style>
     .block-container { max-width: 1050px; padding-top: 1rem; margin: auto; }
-    div[data-baseweb="select"] > div:first-child { max-height: 45px; overflow-y: auto; }
+    
+    /* CAMPO FLEXÍVEL: Removida a trava de max-height para expandir com as balsas */
+    div[data-baseweb="select"] > div:first-child { 
+        max-height: none !important; 
+        overflow-y: visible !important; 
+    }
+    
     .stNumberInput, .stTextInput, .stSelectbox, .stMultiSelect { width: 220px !important; }
     div[data-testid="stVerticalBlock"] > div { margin-top: -0.7rem; }
     .stButton > button { background-color: #073763; color: white; font-weight: bold; width: 100%; }
@@ -25,11 +31,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 2. PDF PERSONALIZADO COM TODOS OS CAMPOS E DATA/HORA
+# 2. PDF COM DATA/HORA BRASIL
 # =========================================================
 class PDF_ZION(FPDF):
     def header(self):
-        self.rect(5, 5, 200, 287) # Moldura
+        self.rect(5, 5, 200, 287)
         try: self.image('icone ZION.png', x=10, y=8, w=20)
         except: pass
         self.set_font('Arial', 'B', 14)
@@ -38,26 +44,26 @@ class PDF_ZION(FPDF):
         self.ln(5)
 
     def footer(self):
-        # Posiciona a 1,5 cm do fim da página
         self.set_y(-20)
         self.set_font('Arial', 'I', 8)
         self.set_text_color(100)
-        # Data e Hora no padrão Brasileiro
-        agora = datetime.now().strftime("%d / %m / %Y   -   %H : %M : %S")
+        
+        # AJUSTE FUSO HORÁRIO BRASIL (UTC-3)
+        fuso_br = timezone(timedelta(hours=-3))
+        agora = datetime.now(fuso_br).strftime("%d / %m / %Y   -   %H : %M : %S")
+        
         self.cell(0, 10, f'Gerado em: {agora}', align='C')
 
 def gerar_pdf_completo(dados):
     pdf = PDF_ZION()
     pdf.add_page()
     pdf.set_font("Arial", "B", 10)
-    
     for k, v in dados.items():
         pdf.set_fill_color(240, 240, 240)
         pdf.cell(60, 9, f" {k}", border=1, fill=True)
         pdf.set_font("Arial", "", 10)
         pdf.cell(0, 9, f" {v}", border=1, ln=True)
         pdf.set_font("Arial", "B", 10)
-    
     return pdf.output(dest="S").encode("latin-1")
 
 # =========================================================
@@ -99,11 +105,14 @@ if pagina == "📊 Simulações":
     d = st.session_state.dados_edit
     v_id = d.get('ID', datetime.now().strftime("VGM %d%m-%H%M"))
 
-    # Grid 4x3
+    # Grid 4x3 Original
     l1c1, l1c2, l1c3 = st.columns(3)
     v_emp = l1c1.selectbox("Empurrador", ativos, index=ativos.index(d['Empurrador']) if d.get('Empurrador') in ativos else 0)
+    
     try: b_def = ast.literal_eval(d.get('Balsas', '[]')) if '[' in str(d.get('Balsas')) else []
     except: b_def = []
+    
+    # Campo Flexível (ocupa o espaço necessário)
     v_bal = l1c2.multiselect("Balsas", lista_balsas, default=b_def)
     v_com = l1c3.text_input("Comandante", value=d.get('Comandante', ""))
 
@@ -130,7 +139,6 @@ if pagina == "📊 Simulações":
     st.markdown(f"### STATUS: <span style='color:{'green' if status == 'Aprovado' else 'red'}'>{status}</span>", unsafe_allow_html=True)
 
     if st.button("FINALIZAR E GERAR PDF"):
-        # Dicionário com TODOS os campos para impressão
         dados_print = {
             "ID da Viagem": v_id,
             "Empurrador": v_emp,
