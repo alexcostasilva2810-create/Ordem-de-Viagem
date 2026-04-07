@@ -7,7 +7,7 @@ from fpdf import FPDF
 import ast
 
 # =========================================================
-# 1. CONFIGURAÇÃO E CSS (BALSAS FLEXÍVEIS)
+# 1. DESIGN E REGRAS VISUAIS
 # =========================================================
 st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
 
@@ -18,20 +18,20 @@ st.markdown("""
     <style>
     .block-container { max-width: 1050px; padding-top: 1rem; margin: auto; }
     
-    /* CAMPO FLEXÍVEL: Removida a trava de max-height para expandir com as balsas */
+    /* Campo de balsas flexível que cresce conforme o uso */
     div[data-baseweb="select"] > div:first-child { 
         max-height: none !important; 
         overflow-y: visible !important; 
     }
     
     .stNumberInput, .stTextInput, .stSelectbox, .stMultiSelect { width: 220px !important; }
-    div[data-testid="stVerticalBlock"] > div { margin-top: -0.7rem; }
+    div[data-testid="stVerticalBlock"] > div { margin-top: -0.8rem; }
     .stButton > button { background-color: #073763; color: white; font-weight: bold; width: 100%; }
     </style>
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 2. PDF COM DATA/HORA BRASIL
+# 2. FUNÇÃO DO PDF (COMPLETO + FUSO BRASIL)
 # =========================================================
 class PDF_ZION(FPDF):
     def header(self):
@@ -40,21 +40,19 @@ class PDF_ZION(FPDF):
         except: pass
         self.set_font('Arial', 'B', 14)
         self.set_text_color(7, 55, 99)
-        self.cell(0, 15, 'ORDEM DE VIAGEM - TRANSDOURADA', align='C', ln=True)
-        self.ln(5)
+        self.cell(0, 10, 'ORDEM DE VIAGEM - TRANSDOURADA', align='C', ln=True)
+        self.ln(10)
 
     def footer(self):
         self.set_y(-20)
         self.set_font('Arial', 'I', 8)
         self.set_text_color(100)
-        
-        # AJUSTE FUSO HORÁRIO BRASIL (UTC-3)
+        # Fuso Horário de Brasília
         fuso_br = timezone(timedelta(hours=-3))
         agora = datetime.now(fuso_br).strftime("%d / %m / %Y   -   %H : %M : %S")
-        
         self.cell(0, 10, f'Gerado em: {agora}', align='C')
 
-def gerar_pdf_completo(dados):
+def gerar_pdf(dados):
     pdf = PDF_ZION()
     pdf.add_page()
     pdf.set_font("Arial", "B", 10)
@@ -67,7 +65,7 @@ def gerar_pdf_completo(dados):
     return pdf.output(dest="S").encode("latin-1")
 
 # =========================================================
-# 3. CONEXÃO E DADOS
+# 3. DADOS E CONEXÃO
 # =========================================================
 def conectar():
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], 
@@ -75,7 +73,7 @@ def conectar():
     return gspread.authorize(creds)
 
 @st.cache_data(ttl=2)
-def carregar_sistema():
+def carregar_tudo():
     client = conectar()
     sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
     df_h = pd.DataFrame(sh.worksheet("Historico").get_all_values())
@@ -86,36 +84,35 @@ def carregar_sistema():
             df_h.loc[:, ~df_h.columns.duplicated()])
 
 # =========================================================
-# 4. TELA PRINCIPAL
+# 4. INTERFACE
 # =========================================================
 with st.sidebar:
     pagina = st.radio("NAVEGAÇÃO", ["📊 Simulações", "📜 Histórico"])
 
-ativos, lista_balsas, lista_rotas, df_h = carregar_sistema()
+ativos, lista_balsas, lista_rotas, df_h = carregar_tudo()
 
 if pagina == "📊 Simulações":
     st.title("ZION - Gestão PCO")
     
     with st.expander("🔍 BUSCAR REGISTRO PARA EDIÇÃO"):
-        id_edit = st.selectbox("Selecione ID:", ["---"] + df_h.iloc[:, 0].tolist())
+        id_sel = st.selectbox("Selecione ID:", ["---"] + df_h.iloc[:, 0].tolist())
         if st.button("CARREGAR DADOS"):
-            st.session_state.dados_edit = df_h[df_h.iloc[:, 0] == id_edit].iloc[0].to_dict()
+            st.session_state.dados_edit = df_h[df_h.iloc[:, 0] == id_sel].iloc[0].to_dict()
             st.rerun()
 
     d = st.session_state.dados_edit
     v_id = d.get('ID', datetime.now().strftime("VGM %d%m-%H%M"))
+    st.subheader(f"Registro: {v_id}")
 
-    # Grid 4x3 Original
+    # --- LINHA 1 ---
     l1c1, l1c2, l1c3 = st.columns(3)
     v_emp = l1c1.selectbox("Empurrador", ativos, index=ativos.index(d['Empurrador']) if d.get('Empurrador') in ativos else 0)
-    
     try: b_def = ast.literal_eval(d.get('Balsas', '[]')) if '[' in str(d.get('Balsas')) else []
     except: b_def = []
-    
-    # Campo Flexível (ocupa o espaço necessário)
     v_bal = l1c2.multiselect("Balsas", lista_balsas, default=b_def)
     v_com = l1c3.text_input("Comandante", value=d.get('Comandante', ""))
 
+    # --- LINHA 2 ---
     l2c1, l2c2, l2c3 = st.columns(3)
     oris = sorted(list(set([r[0] for r in lista_rotas])))
     dess = sorted(list(set([r[1] for r in lista_rotas])))
@@ -123,11 +120,13 @@ if pagina == "📊 Simulações":
     v_des = l2c2.selectbox("Destino", dess, index=dess.index(d['Destino']) if d.get('Destino') in dess else 0)
     v_chf = l2c3.text_input("Chefe de Máquinas", value=d.get('Chefe de Máquinas', ""))
 
+    # --- LINHA 3 (CAMPOS FORMATADOS) ---
     l3c1, l3c2, l3c3 = st.columns(3)
-    v_vol = l3c1.number_input("Volume (M³)", value=float(str(d.get('Volume','0')).split()[0].replace('.','').replace(',','.')) if d.get('Volume') else 0.0, format="%.3f")
+    v_vol = l3c1.number_input("Volume (M³)", value=float(str(d.get('Volume','0')).replace('M³','').replace('.','').replace(',','.')) if d.get('Volume') else 0.0, format="%.3f")
     v_fat = l3c2.number_input("Faturamento (R$)", value=float(str(d.get('Faturamento','0')).replace('R$','').replace('.','').replace(',','.')) if d.get('Faturamento') else 0.0, format="%.2f")
     v_hor = l3c3.number_input("Horímetro", value=float(d.get('Horímetro', 0.0)))
 
+    # --- LINHA 4 ---
     l4c1, l4c2, l4c3 = st.columns(3)
     v_tmp = l4c1.number_input("Tempo Previsto (H)", value=int(d.get('Tempo Previsto (H)', 0)))
     v_cbm = l4c2.number_input("Combustível (L)", value=int(d.get('Combustível (L)', 0)))
@@ -139,26 +138,15 @@ if pagina == "📊 Simulações":
     st.markdown(f"### STATUS: <span style='color:{'green' if status == 'Aprovado' else 'red'}'>{status}</span>", unsafe_allow_html=True)
 
     if st.button("FINALIZAR E GERAR PDF"):
-        dados_print = {
-            "ID da Viagem": v_id,
-            "Empurrador": v_emp,
-            "Balsas": ", ".join(v_bal),
-            "Comandante": v_com,
-            "Chefe de Máquinas": v_chf,
-            "Origem": v_ori,
-            "Destino": v_des,
-            "Volume": f"{v_vol:,.3f} M³",
-            "Faturamento": f"R$ {v_fat:,.2f}",
-            "Horímetro": f"{v_hor}",
-            "Tempo Previsto": f"{v_tmp} Horas",
-            "Combustível": f"{v_cbm} Litros",
-            "Custo Diesel": f"R$ {v_dsl:,.2f}",
-            "Status da Viagem": status,
-            "Observações": v_obs
+        dados_pdf = {
+            "ID Viagem": v_id, "Empurrador": v_emp, "Balsas": ", ".join(v_bal),
+            "Comandante": v_com, "Chefe Máquinas": v_chf, "Rota": f"{v_ori} x {v_des}",
+            "Volume": f"{v_vol:,.3f} M³", "Faturamento": f"R$ {v_fat:,.2f}",
+            "Diesel": f"R$ {v_dsl:,.2f}", "Status": status, "Obs": v_obs
         }
-        pdf_bytes = gerar_pdf_completo(dados_print)
-        st.success("PDF Gerado com sucesso!")
-        st.download_button("📥 BAIXAR ORDEM DE VIAGEM", pdf_bytes, f"Ordem_{v_id}.pdf", "application/pdf")
+        pdf_bytes = gerar_pdf(dados_pdf)
+        st.success("PDF Gerado!")
+        st.download_button("📥 BAIXAR ORDEM DE VIAGEM", pdf_bytes, f"{v_id}.pdf")
 
 elif pagina == "📜 Histórico":
     st.markdown("<style>.block-container { max-width: 100% !important; }</style>", unsafe_allow_html=True)
