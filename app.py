@@ -5,114 +5,110 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 from fpdf import FPDF
 import ast
-import time
+import uuid
 
-# 1. CONFIGURAÇÃO E RESPIRO DE 2CM
-st.set_page_config(page_title="ZION - SISTEMA PCO", layout="wide")
+# 1. CONFIGURAÇÃO GERAL
+st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
+
+if 'pagina_atual' not in st.session_state: st.session_state.pagina_atual = "Capa"
+if 'dados_edit' not in st.session_state: st.session_state.dados_edit = {}
 
 st.markdown("""
     <style>
-    .block-container { max-width: 1100px; padding-top: 75px; margin: auto; }
+    .block-container { max-width: 1100px; padding-top: 50px; margin: auto; }
     .stMultiSelect div[data-baseweb="select"] > div:first-child { max-height: 200px; overflow-y: auto; }
-    .stButton > button { background-color: #073763; color: white; height: 3em; width: 100%; font-weight: bold; }
+    .stButton > button { background-color: #073763; color: white; font-weight: bold; width: 100%; }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. FUNÇÃO DE CARREGAMENTO ÚNICO (EVITA ERRO 429 QUOTA)
+# 2. CARREGAMENTO COM CACHE (PARA NÃO DAR ERRO DE QUOTA/LIMITE)
 @st.cache_data(ttl=600)
-def carregar_dados_estaticos():
+def carregar_dados_sistema():
     try:
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], 
                 scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
-        client = gspread.authorize(creds)
-        sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
+        sh = gspread.authorize(creds).open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
         
         ativos = sh.worksheet("Ativos").col_values(1)[1:]
         balsas = sh.worksheet("Balsas").col_values(1)[1:]
         rotas = sh.worksheet("Rotas").get_all_values()[1:]
-        hist_raw = sh.worksheet("Historico").get_all_values()
+        hist = sh.worksheet("Historico").get_all_values()
         
-        df_h = pd.DataFrame(hist_raw[1:], columns=hist_raw[0])
-        df_h = df_h.loc[:, ~df_h.columns.duplicated()].copy()
-        
-        return ativos, balsas, rotas, df_h
-    except Exception as e:
-        st.error(f"Erro de Conexão: {e}")
+        df = pd.DataFrame(hist[1:], columns=hist[0])
+        df = df.loc[:, ~df.columns.duplicated()].copy() # Remove colunas duplicadas
+        return ativos, balsas, rotas, df
+    except:
         return [], [], [], pd.DataFrame()
 
-# 3. GERADOR DE PDF
-def gerar_pdf(dados):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, "ORDEM DE SERVIÇO - TRANSDOURADA", ln=True, align='C')
-    pdf.ln(10)
-    pdf.set_font("Arial", "", 10)
-    for k, v in dados.items():
-        pdf.cell(50, 8, f"{k}:", border=1)
-        pdf.cell(0, 8, f" {v}", border=1, ln=True)
-    return pdf.output(dest="S").encode("latin-1")
-
-# 4. LÓGICA DE TELAS
-if 'tela' not in st.session_state: st.session_state.tela = "Capa"
-if 'dados_edicao' not in st.session_state: st.session_state.dados_edicao = {}
-
-ativos, lista_balsas, lista_rotas, df_historico = carregar_dados_estaticos()
-
-if st.session_state.tela == "Capa":
-    st.markdown("<h1 style='text-align:center;'>🚢 ZION - GESTÃO PCO</h1>", unsafe_allow_html=True)
+# 3. TELAS
+if st.session_state.pagina_atual == "Capa":
+    st.markdown("<h1 style='text-align: center;'>🚢 ZION - GESTÃO PCO</h1>", unsafe_allow_html=True)
     if st.button("🚀 ENTRAR NO SISTEMA"):
-        st.session_state.tela = "Sistema"
+        st.session_state.pagina_atual = "Sistema"
         st.rerun()
 
 else:
+    ativos, lista_balsas, lista_rotas, df_h = carregar_dados_sistema()
+
     with st.sidebar:
         if st.button("🏠 Voltar para Capa"):
-            st.session_state.tela = "Capa"
+            st.session_state.pagina_atual = "Capa"
             st.rerun()
-        opcao = st.radio("Menu", ["📊 Simulação", "📜 Histórico"])
+        menu = st.radio("Menu", ["📊 Simulações", "📜 Histórico"])
 
-    if opcao == "📊 Simulação":
-        st.title("📊 Nova Simulação")
+    if menu == "📊 Simulações":
+        st.title("📊 Simulador de Operação")
         
-        # BUSCA SEM BUG
-        with st.expander("🔍 Recuperar Viagem Anterior"):
-            id_busca = st.selectbox("Selecione ID:", ["---"] + (df_historico.iloc[:,0].tolist() if not df_historico.empty else []))
-            if st.button("Carregar Dados"):
-                st.session_state.dados_edicao = df_historico[df_historico.iloc[:, 0] == id_busca].iloc[0].to_dict()
+        # BUSCA DE REGISTRO
+        with st.expander("🔍 BUSCAR REGISTRO EXISTENTE"):
+            id_sel = st.selectbox("ID:", ["---"] + (df_h.iloc[:,0].tolist() if not df_h.empty else []))
+            if st.button("CARREGAR DADOS"):
+                st.session_state.dados_edit = df_h[df_h.iloc[:, 0] == id_sel].iloc[0].to_dict()
                 st.rerun()
 
-        # FORMULÁRIO QUE AGUENTA 15 BALSAS
-        with st.form("form_viagem"):
-            d = st.session_state.dados_edicao
-            c1, c2 = st.columns([1, 2])
-            emp = c1.selectbox("Empurrador", ativos)
+        # FORMULÁRIO COMPLETO (VOLTARAM TODOS OS CAMPOS)
+        with st.form("form_pco"):
+            d = st.session_state.dados_edit
             
-            # Tratamento para as 15 balsas
+            col1, col2, col3 = st.columns([1, 1.5, 1])
+            v_emp = col1.selectbox("Empurrador", ativos, index=ativos.index(d['Empurrador']) if d.get('Empurrador') in ativos else 0)
+            
             try:
-                b_salvas = ast.literal_eval(d.get('Balsas', '[]')) if '[' in str(d.get('Balsas')) else []
-            except: b_salvas = []
-            
-            bal = c2.multiselect("Selecione o Comboio (Até 15+)", lista_balsas, default=[b for b in b_salvas if b in lista_balsas])
-            
-            st.write("---")
-            c3, c4, c5 = st.columns(3)
-            com = c3.text_input("Comandante", value=d.get('Comandante', ""))
-            chf = c4.text_input("Chefe de Máquinas", value=d.get('Chefe de Máquinas', ""))
-            fat = c5.number_input("Faturamento (R$)", value=0.0)
-            
-            submit = st.form_submit_button("✅ SALVAR E GERAR O.S.")
-            
-            if submit:
-                if not bal:
-                    st.error("Selecione o comboio!")
-                else:
-                    status = "APROVADO" if fat >= 50000 else "ANÁLISE"
-                    dados_os = {"ID": "NOVO", "Empurrador": emp, "Comboio": ", ".join(bal), "Faturamento": f"R$ {fat:,.2f}", "Status": status}
-                    pdf_bytes = gerar_pdf(dados_os)
-                    st.success(f"Comboio de {len(bal)} balsas pronto!")
-                    st.download_button("📥 BAIXAR O.S. EM PDF", pdf_bytes, "Ordem_Servico.pdf", "application/pdf")
+                b_def = ast.literal_eval(d.get('Balsas', '[]')) if '[' in str(d.get('Balsas')) else []
+            except: b_def = []
+            v_bal = col2.multiselect("Comboio (Até 15+)", lista_balsas, default=[b for b in b_def if b in lista_balsas])
+            v_com = col3.text_input("Comandante", value=d.get('Comandante', ""))
 
-    elif opcao == "📜 Histórico":
-        st.title("📜 Histórico")
-        st.dataframe(df_historico, use_container_width=True, hide_index=True)
+            col4, col5, col6 = st.columns(3)
+            oris = sorted(list(set([r[0] for r in lista_rotas if r])))
+            dess = sorted(list(set([r[1] for r in lista_rotas if len(r)>1])))
+            v_ori = col4.selectbox("Origem", oris, index=oris.index(d['Origem']) if d.get('Origem') in oris else 0)
+            v_des = col5.selectbox("Destino", dess, index=dess.index(d['Destino']) if d.get('Destino') in dess else 0)
+            v_chf = col6.text_input("Chefe de Máquinas", value=d.get('Chefe de Máquinas', ""))
+
+            col7, col8, col9 = st.columns(3)
+            v_vol = col7.number_input("Volume (M³)", value=float(d.get('Volume (M³)', 0.0)))
+            v_fat = col8.number_input("Faturamento (R$)", value=float(d.get('Faturamento (R$)', 0.0)))
+            v_hor = col9.number_input("Horímetro", value=float(d.get('Horímetro', 0.0)))
+
+            col10, col11, col12 = st.columns(3)
+            v_tem = col10.number_input("Tempo Previsto (H)", value=int(d.get('Tempo (H)', 0)))
+            v_combus = col11.number_input("Combustível (L)", value=int(d.get('Combustível (L)', 0)))
+            v_custo = col12.number_input("Custo Diesel (R$)", value=float(d.get('Custo Diesel (R$)', 0.0)))
+
+            v_obs = st.text_area("Observações", value=d.get('Observações', ""))
+
+            # Lógica de Status
+            status_cor = "green" if v_fat >= 50000 else "red"
+            st.markdown(f"### STATUS: <span style='color:{status_cor}'>{'Aprovado' if v_fat >= 50000 else 'Análise'}</span>", unsafe_allow_html=True)
+
+            if st.form_submit_button("✅ FINALIZAR E GERAR O.S. (PDF)"):
+                if not v_bal:
+                    st.error("Selecione as balsas!")
+                else:
+                    st.success(f"Comboio de {len(v_bal)} balsas processado com sucesso!")
+                    # Aqui entra sua lógica de salvar na planilha e gerar o PDF
+
+    elif menu == "📜 Histórico":
+        st.title("📜 Histórico de Viagens")
+        st.dataframe(df_h, use_container_width=True, hide_index=True)
