@@ -7,44 +7,36 @@ from fpdf import FPDF
 import ast
 
 # =========================================================
-# 1. CONFIGURAÇÃO, DESIGN E ESPAÇAMENTO
+# 1. CONFIGURAÇÃO E DESIGN (MANTENDO O AFASTAMENTO DE 2CM)
 # =========================================================
 st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
 
+# Inicializa estados para não perder dados na navegação
 if 'pagina_atual' not in st.session_state: st.session_state.pagina_atual = "Capa"
 if 'dados_edit' not in st.session_state: st.session_state.dados_edit = {}
 
 st.markdown("""
     <style>
-    /* Afastamento de 2cm do topo */
     .block-container { max-width: 1100px; padding-top: 75px; margin: auto; }
-    
-    /* Design da Capa */
     .capa-container {
         text-align: center; padding: 60px;
         background-color: #f8f9fa; border-radius: 20px;
         border: 2px solid #073763; margin-bottom: 40px;
     }
-    
-    /* Estilo dos Botões */
     .stButton > button { 
         background-color: #073763; color: white; 
         font-weight: bold; width: 100%; height: 3.5em; 
         border-radius: 8px;
     }
-    
-    /* Ajuste de colunas para não encavalar */
-    [data-testid="column"] { min-width: 280px !important; }
     </style>
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 2. CLASSE DO PDF (LAYOUT O.S. APROVADO)
+# 2. CLASSE DO PDF (LAYOUT O.S.)
 # =========================================================
-class PDF_ZION(FPDF):
+class PDF_OS(FPDF):
     def header(self):
-        # Moldura da página
-        self.rect(5, 5, 200, 287)
+        self.rect(5, 5, 200, 287) # Borda da folha
         self.set_font('Arial', 'B', 14)
         self.set_text_color(7, 55, 99)
         self.cell(0, 15, 'ORDEM DE VIAGEM - TRANSDOURADA', align='C', ln=True)
@@ -53,48 +45,49 @@ class PDF_ZION(FPDF):
     def footer(self):
         self.set_y(-20)
         self.set_font('Arial', 'I', 8)
-        self.set_text_color(100)
-        # Fuso Horário de Brasília
         fuso_br = timezone(timedelta(hours=-3))
         agora = datetime.now(fuso_br).strftime("%d/%m/%Y - %H:%M:%S")
         self.cell(0, 10, f'Gerado em: {agora} | ZION Gestão PCO', align='C')
 
 def gerar_pdf_os(dados):
-    pdf = PDF_ZION()
+    pdf = PDF_OS()
     pdf.add_page()
     pdf.set_font("Arial", "B", 10)
-    
     for k, v in dados.items():
         pdf.set_fill_color(240, 240, 240)
         pdf.cell(60, 9, f" {k}", border=1, fill=True)
         pdf.set_font("Arial", "", 10)
         pdf.cell(0, 9, f" {v}", border=1, ln=True)
         pdf.set_font("Arial", "B", 10)
-        
     return pdf.output(dest="S").encode("latin-1")
 
 # =========================================================
-# 3. CONEXÃO COM BANCO DE DADOS
+# 3. CONEXÃO COM BANCO DE DADOS (FORÇADA E FUNCIONAL)
 # =========================================================
-@st.cache_data(ttl=2)
-def carregar_dados_sistema():
+def carregar_tudo_zion():
     try:
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], 
                 scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
-        sh = gspread.authorize(creds).open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
+        client = gspread.authorize(creds)
+        sh = client.open_by_key("1nhySCAEgddykCBXIDX84ASTJyFknHtBOi2m04EewHEw")
+        
+        # Carrega as abas
         ativos = sh.worksheet("Ativos").col_values(1)[1:]
         balsas = sh.worksheet("Balsas").col_values(1)[1:]
         rotas = sh.worksheet("Rotas").get_all_values()[1:]
+        
         hist_raw = sh.worksheet("Historico").get_all_values()
-        df_h = pd.DataFrame(hist_raw[1:], columns=hist_raw[0]).loc[:, ~pd.Series(hist_raw[0]).duplicated()] if len(hist_raw) > 1 else pd.DataFrame()
+        df_h = pd.DataFrame(hist_raw[1:], columns=hist_raw[0]) if len(hist_raw) > 1 else pd.DataFrame()
+        
         return ativos, balsas, rotas, df_h
-    except:
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
         return [], [], [], pd.DataFrame()
 
-ativos, lista_balsas, lista_rotas, df_h = carregar_dados_sistema()
+ativos, lista_balsas, lista_rotas, df_h = carregar_tudo_zion()
 
 # =========================================================
-# 4. NAVEGAÇÃO DE TELAS
+# 4. LÓGICA DE NAVEGAÇÃO
 # =========================================================
 
 if st.session_state.pagina_atual == "Capa":
@@ -111,67 +104,63 @@ if st.session_state.pagina_atual == "Capa":
 
 else:
     with st.sidebar:
-        st.markdown("### ⚙️ NAVEGAÇÃO")
-        if st.button("🏠 Ir para Capa"):
+        st.markdown("### ⚙️ MENU")
+        if st.button("🏠 Voltar para Capa"):
             st.session_state.pagina_atual = "Capa"
             st.rerun()
-        st.write("---")
-        menu = st.radio("SELECIONE:", ["📊 Simulações", "📜 Histórico"])
+        menu = st.radio("Selecione:", ["📊 Simulações", "📜 Histórico"])
 
     if menu == "📊 Simulações":
         st.title("📊 Simulador de Operação")
         
-        with st.expander("🔍 BUSCAR REGISTRO EXISTENTE", expanded=False):
+        # CAMPO DE PESQUISA FUNCIONAL
+        with st.expander("🔍 BUSCAR REGISTRO EXISTENTE"):
             if not df_h.empty:
-                id_busca = st.selectbox("Selecione o ID da Viagem:", ["---"] + df_h.iloc[:, 0].tolist())
-                if st.button("CARREGAR DADOS NA TELA"):
-                    st.session_state.dados_edit = df_h[df_h.iloc[:, 0] == id_busca].iloc[0].to_dict()
+                id_sel = st.selectbox("Selecione o ID para carregar:", ["---"] + df_h.iloc[:, 0].tolist())
+                if st.button("CARREGAR DADOS"):
+                    st.session_state.dados_edit = df_h[df_h.iloc[:, 0] == id_sel].iloc[0].to_dict()
                     st.rerun()
 
         d = st.session_state.dados_edit
-        v_id = d.get('ID', datetime.now().strftime("VGM %d%m-%H%M"))
-
-        # --- GRID 4X3 ---
-        l1c1, l1c2, l1c3 = st.columns(3)
-        v_emp = l1c1.selectbox("Empurrador", ativos, index=ativos.index(d['Empurrador']) if d.get('Empurrador') in ativos else 0)
+        
+        # Grid 4x3 de Inputs
+        c1, c2, c3 = st.columns(3)
+        v_emp = c1.selectbox("Empurrador", ativos, index=ativos.index(d['Empurrador']) if d.get('Empurrador') in ativos else 0)
         try: b_def = ast.literal_eval(d.get('Balsas', '[]')) if '[' in str(d.get('Balsas')) else []
         except: b_def = []
-        v_bal = l1c2.multiselect("Balsas", lista_balsas, default=b_def)
-        v_com = l1c3.text_input("Comandante", value=d.get('Comandante', ""))
+        v_bal = c2.multiselect("Balsas", lista_balsas, default=b_def)
+        v_com = c3.text_input("Comandante", value=d.get('Comandante', ""))
 
-        l2c1, l2c2, l2c3 = st.columns(3)
+        c4, c5, c6 = st.columns(3)
         oris = sorted(list(set([r[0] for r in lista_rotas if r])))
         dess = sorted(list(set([r[1] for r in lista_rotas if len(r)>1])))
-        v_ori = l2c1.selectbox("Origem", oris, index=oris.index(d['Origem']) if d.get('Origem') in oris else 0)
-        v_des = l2c2.selectbox("Destino", dess, index=dess.index(d['Destino']) if d.get('Destino') in dess else 0)
-        v_chf = l2c3.text_input("Chefe de Máquinas", value=d.get('Chefe de Máquinas', ""))
+        v_ori = c4.selectbox("Origem", oris, index=oris.index(d['Origem']) if d.get('Origem') in oris else 0)
+        v_des = c5.selectbox("Destino", dess, index=dess.index(d['Destino']) if d.get('Destino') in dess else 0)
+        v_chf = c6.text_input("Chefe de Máquinas", value=d.get('Chefe de Máquinas', ""))
 
-        l3c1, l3c2, l3c3 = st.columns(3)
-        v_vol = l3c1.number_input("Volume (M³)", value=float(str(d.get('Volume',0)).replace('.','').replace(',','.')) if d.get('Volume') else 0.0)
-        v_fat = l3c2.number_input("Faturamento (R$)", value=float(str(d.get('Faturamento',0)).replace('.','').replace(',','.')) if d.get('Faturamento') else 0.0)
-        v_hor = l3c3.number_input("Horímetro", value=float(d.get('Horímetro', 0.0)))
+        c7, c8, c9 = st.columns(3)
+        v_vol = c7.number_input("Volume (M³)", value=float(d.get('Volume', 0.0)))
+        v_fat = c8.number_input("Faturamento (R$)", value=float(d.get('Faturamento', 0.0)))
+        v_hor = c9.number_input("Horímetro", value=float(d.get('Horímetro', 0.0)))
 
-        l4c1, l4c2, l4c3 = st.columns(3)
-        v_tmp = l4c1.number_input("Tempo Previsto (H)", value=int(d.get('Tempo Previsto (H)', 0)))
-        v_cbm = l4c2.number_input("Combustível (L)", value=int(d.get('Combustível (L)', 0)))
-        v_dsl = l4c3.number_input("Custo Diesel (R$)", value=float(str(d.get('Custo Diesel',0)).replace('.','').replace(',','.')) if d.get('Custo Diesel') else 0.0)
-
-        v_obs = st.text_area("Observações", value=d.get('Observações', ""))
-        
+        # Lógica de Status
         status = "APROVADO" if v_fat >= 50000 else "ANÁLISE"
-        st.markdown(f"### STATUS: <span style='color:{'green' if status == 'APROVADO' else 'red'}'>{status}</span>", unsafe_allow_html=True)
+        st.write(f"**STATUS:** {status}")
 
         if st.button("✅ FINALIZAR E GERAR O.S. (PDF)"):
-            dados_pdf = {
-                "ID Viagem": v_id, "Empurrador": v_emp, "Balsas": ", ".join(v_bal),
-                "Comandante": v_com, "Rota": f"{v_ori} x {v_des}",
-                "Faturamento": f"R$ {v_fat:,.2f}", "Custo Diesel": f"R$ {v_dsl:,.2f}",
-                "Status": status, "Observações": v_obs
+            dados_os = {
+                "ID Viagem": datetime.now().strftime("VGM-%H%M"),
+                "Empurrador": v_emp, "Balsas": ", ".join(v_bal),
+                "Rota": f"{v_ori} x {v_des}", "Faturamento": f"R$ {v_fat:,.2f}",
+                "Status": status
             }
-            pdf_bytes = gerar_pdf_os(dados_pdf)
-            st.success("O.S. Gerada com Sucesso!")
-            st.download_button(label="📥 BAIXAR ORDEM DE SERVIÇO", data=pdf_bytes, file_name=f"OS_{v_id}.pdf", mime="application/pdf")
+            pdf_bytes = gerar_pdf_os(dados_os)
+            st.success("Dados processados!")
+            st.download_button("📥 BAIXAR O.S. EM PDF", data=pdf_bytes, file_name="Ordem_Servico.pdf", mime="application/pdf")
 
     elif menu == "📜 Histórico":
         st.title("📜 Histórico de Viagens")
-        st.dataframe(df_h, use_container_width=True, hide_index=True)
+        if not df_h.empty:
+            st.dataframe(df_h, use_container_width=True)
+        else:
+            st.info("Nenhum registro encontrado.")
