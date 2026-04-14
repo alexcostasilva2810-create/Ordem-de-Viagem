@@ -9,7 +9,7 @@ import ast
 # =========================================================
 # 1. DESIGN E CONFIGURAÇÃO
 # =========================================================
-st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
+st.set_page_config(page_title="ZION - O.S Para Viagem", layout="wide")
 
 if 'dados_edit' not in st.session_state: st.session_state.dados_edit = {}
 
