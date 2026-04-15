@@ -10,7 +10,6 @@ import uuid
 # --- 1. CONFIGURAÇÕES E BANCO DE USUÁRIOS ---
 st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
 
-# Espaço para Usuário | Senha | Perfil
 USUARIOS = {
     "admin": {"senha": "123", "perfil": "Administrador"},
     "operador": {"senha": "456", "perfil": "Operador"}
@@ -25,16 +24,7 @@ st.markdown("""
     .stMultiSelect div[data-baseweb="select"] > div:first-child { max-height: 180px; overflow-y: auto; }
     .stButton > button { background-color: #073763; color: white; font-weight: bold; width: 100%; height: 3.5em; }
     
-    /* Centralização e largura do Login */
-    .login-box {
-        max-width: 350px;
-        margin: auto;
-        padding: 25px;
-        border: 1px solid #eee;
-        border-radius: 10px;
-        background: #fdffdf;
-        box-shadow: 0px 4px 10px rgba(0,0,0,0.05);
-    }
+    /* Estilo do Rodapé */
     .footer-trans {
         text-align: center;
         margin-top: 30px;
@@ -75,15 +65,13 @@ class PDF_PCO(FPDF):
         agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self.cell(0, 10, f'Gerado em: {agora} - Local: Belem/PA', align='C')
 
-# --- 3. TELA DE LOGIN (CAPA AJUSTADA) ---
+# --- 3. TELA DE LOGIN (SEM O RETÂNGULO AMARELO) ---
 if not st.session_state.autenticado:
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown("<h1 style='text-align: center; color: #073763;'>Zion - Abertura de O.S para Viagem</h1>", unsafe_allow_html=True)
     
-    # Container Centralizado e Estreito
-    col_l, col_c, col_r = st.columns([1, 1, 1])
+    col_l, col_c, col_r = st.columns([1.2, 1, 1.2])
     with col_c:
-        st.markdown('<div class="login-box">', unsafe_allow_html=True)
         usuario = st.text_input("Usuário")
         senha = st.text_input("Senha", type="password")
         if st.button("🚀 ENTRAR"):
@@ -94,9 +82,7 @@ if not st.session_state.autenticado:
                 st.rerun()
             else:
                 st.error("Dados incorretos.")
-        st.markdown('</div>', unsafe_allow_html=True)
         
-        # Rodapé com Nome e Navio
         st.markdown("""
             <div class="footer-trans">
                 Transdourada Navegação<br>
@@ -104,7 +90,7 @@ if not st.session_state.autenticado:
             </div>
         """, unsafe_allow_html=True)
 
-# --- 4. SISTEMA PRINCIPAL (LAYOUT MANTIDO) ---
+# --- 4. SISTEMA PRINCIPAL ---
 else:
     ativos, lista_balsas, lista_rotas, df_h = carregar_dados()
 
@@ -128,7 +114,6 @@ else:
 
         d = st.session_state.dados_edit
 
-        # Campos soltos conforme o vídeo
         c1, c2, c3 = st.columns([1, 2, 1])
         v_emp = c1.selectbox("Empurrador", ativos, index=ativos.index(d['Empurrador']) if d.get('Empurrador') in ativos else 0)
         try: b_def = ast.literal_eval(d.get('Balsas', '[]')) if '[' in str(d.get('Balsas')) else []
@@ -136,17 +121,17 @@ else:
         v_bal = c2.multiselect("Balsas (Comboio)", lista_balsas, default=[b for b in b_def if b in lista_balsas])
         v_com = c3.text_input("Comandante", value=d.get('Comandante', ""))
 
-        c4, c5, c6 = st.columns(3)
+        col4, col5, col6 = st.columns(3)
         oris = sorted(list(set([r[0] for r in lista_rotas if r])))
         dess = sorted(list(set([r[1] for r in lista_rotas if len(r)>1])))
-        v_ori = c4.selectbox("Origem", oris, index=oris.index(d['Origem']) if d.get('Origem') in oris else 0)
-        v_des = c5.selectbox("Destino", dess, index=dess.index(d['Destino']) if d.get('Destino') in dess else 0)
-        v_chf = c6.text_input("Chefe de Máquinas", value=d.get('Chefe de Máquinas', ""))
+        v_ori = col4.selectbox("Origem", oris, index=oris.index(d['Origem']) if d.get('Origem') in oris else 0)
+        v_des = col5.selectbox("Destino", dess, index=dess.index(d['Destino']) if d.get('Destino') in dess else 0)
+        v_chf = col6.text_input("Chefe de Máquinas", value=d.get('Chefe de Máquinas', ""))
 
-        c7, c8, c9 = st.columns(3)
-        v_vol = c7.number_input("Volume M³", value=int(str(d.get('Volume', 0)).replace('.','')) if d.get('Volume') else 0)
-        v_fat = c8.number_input("Faturamento (R$)", value=float(d.get('Faturamento', 0.0)))
-        v_hor = c9.number_input("Horímetro", value=float(d.get('Horímetro', 0.0)))
+        col7, col8, col9 = st.columns(3)
+        v_vol = col7.number_input("Volume M³", value=int(str(d.get('Volume', 0)).replace('.','')) if d.get('Volume') else 0)
+        v_fat = col8.number_input("Faturamento (R$)", value=float(d.get('Faturamento', 0.0)))
+        v_hor = col9.number_input("Horímetro", value=float(d.get('Horímetro', 0.0)))
 
         c10, c11, c12 = st.columns(3)
         v_tem = c10.number_input("Tempo Previsto (H)", value=int(d.get('Tempo (H)', 0)))
@@ -172,7 +157,6 @@ else:
                     pdf = PDF_PCO()
                     pdf.add_page()
                     pdf.set_font("Arial", "B", 10)
-                    # Adiciona todos os dados ao PDF
                     lista_pdf = {
                         "ID": id_v, "Data": data_v, "Empurrador": v_emp, "Comboio": ", ".join(v_bal),
                         "Comandante": v_com, "Origem": v_ori, "Destino": v_des, "Volume M³": vol_format,
