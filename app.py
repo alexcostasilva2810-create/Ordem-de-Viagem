@@ -11,7 +11,7 @@ import uuid
 st.set_page_config(page_title="ZION - Gestão PCO", layout="wide")
 
 USUARIOS = {
-    "admin": {"senha": "123", "perfil": "Administrador"},
+    "Denilson": {"senha": "123", "perfil": "Gerente do PCO"},
     "operador": {"senha": "456", "perfil": "Operador"}
 }
 
